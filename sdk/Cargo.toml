@@ -1,0 +1,11 @@
+[package]
+name = "miniutils-app"
+version = "0.1.0"
+description = "O lado do app no protocolo dos apps externos do MiniUtils (JSON por linha)"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

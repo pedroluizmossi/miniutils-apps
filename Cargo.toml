@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["sdk", "repos"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+miniutils-app = { path = "sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# O app fica ligado o dia todo: binário pequeno e sem símbolos.
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

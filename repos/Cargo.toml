@@ -1,0 +1,14 @@
+[package]
+name = "repos"
+version = "0.1.0"
+description = "Repositórios Git: app externo do MiniUtils que mostra o que falta commitar e enviar"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+miniutils-app = { workspace = true }
+serde_json = { workspace = true }
+# mudanças no .git (commit, checkout, fetch) sem varrer o disco: inotify no Linux,
+# ReadDirectoryChangesW no Windows
+notify = "8"

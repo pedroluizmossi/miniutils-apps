@@ -1,0 +1,147 @@
+# Release de um app: a tag `<app>-v<versão>` (ex.: `repos-v0.1.0`) roda os testes, compila
+# o app para Linux (estático, musl: roda em qualquer distro) e Windows, e publica um Release
+# com os executáveis, as somas SHA-256 e a entrada pronta para o registry.json da loja
+# (nas notas e no arquivo `registry-entry.json`).
+#
+#   git tag repos-v0.1.0 && git push origin repos-v0.1.0
+#
+# A versão da tag tem de bater com a `version` do Cargo.toml do app. Rodar à mão (aba
+# Actions › Release › Run workflow) só compila, como artefatos da execução, sem publicar.
+name: Release
+
+on:
+  push:
+    tags: ["*-v*"]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Pasta do app (ex.: repos)"
+        required: true
+        default: repos
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Executável ${{ matrix.os_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os_name: linux
+            target: x86_64-unknown-linux-musl
+            ext: ""
+          - runner: windows-latest
+            os_name: windows
+            target: x86_64-pc-windows-msvc
+            ext: ".exe"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: App e versão
+        id: app
+        env:
+          INPUT_APP: ${{ inputs.app }}
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            app="${GITHUB_REF_NAME%-v*}"
+            tag_version="${GITHUB_REF_NAME##*-v}"
+          else
+            app="$INPUT_APP"
+          fi
+          if [[ ! -f "$app/manifest.toml" ]]; then
+            echo "::error::não há app em $app/ (falta $app/manifest.toml)"
+            exit 1
+          fi
+          # `cargo pkgid` devolve "…#repos@0.1.0" (ou "…#0.1.0"): fica o que vem depois
+          id=$(cargo pkgid -p "$app" --locked)
+          version="${id##*[#@]}"
+          if [[ -n "${tag_version:-}" && "$tag_version" != "$version" ]]; then
+            echo "::error::a tag $GITHUB_REF_NAME não bate com a versão $version de $app/Cargo.toml"
+            exit 1
+          fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+
+      - name: musl (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Testes
+        run: cargo test --workspace --locked
+
+      - name: Compilar (release)
+        env:
+          APP: ${{ steps.app.outputs.app }}
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked -p "$APP" --target "$TARGET"
+
+      - name: Empacotar
+        env:
+          APP: ${{ steps.app.outputs.app }}
+          TARGET: ${{ matrix.target }}
+          OS_NAME: ${{ matrix.os_name }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          # o nome que tools/index_entry.py espera
+          asset="$APP-$OS_NAME-x86_64$EXT"
+          mkdir -p dist
+          cp "target/$TARGET/release/$APP$EXT" "dist/$asset"
+          cd dist
+          sha256sum "$asset" > "$asset.sha256"
+          cat "$asset.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os_name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publicar o Release
+    needs: build
+    # só numa tag; rodando à mão os executáveis ficam como artefatos
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Entrada do índice e Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          app="${TAG%-v*}"
+          version="${TAG##*-v}"
+          python3 tools/index_entry.py --app "$app" --tag "$TAG" --commit "$GITHUB_SHA" \
+            --repo "https://github.com/$GITHUB_REPOSITORY" --dist dist > registry-entry.json
+          {
+            echo "Executáveis de **$app $version** para Linux (estático) e Windows."
+            echo
+            echo "Para publicar na loja: acrescente a entrada abaixo à lista \`plugins\` do"
+            echo "\`registry.json\` e assine o índice de novo (\`miniutils --loja-assinar\`)."
+            echo
+            echo '```json'
+            cat registry-entry.json
+            echo '```'
+          } > notes.md
+          ls -l dist
+          gh release create "$TAG" dist/* registry-entry.json --title "$app $version" --notes-file notes.md --verify-tag

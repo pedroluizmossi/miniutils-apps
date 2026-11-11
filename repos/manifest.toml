@@ -1,0 +1,44 @@
+# Repositórios Git: app externo do MiniUtils (acesso total).
+# Formato: topo de src/core/plugins.rs; protocolo: topo de src/apps/external.rs (no
+# repositório do MiniUtils).
+id = "io.github.pedroluizmossi.repos"
+name = "Repositórios"
+description = "Seus repositórios Git e o que falta commitar e enviar. A mascote cobra pendência velha e comemora quando tudo foi enviado. Funciona no Linux e no Windows (precisa do git)."
+icon = "polvo"
+api = 1
+
+[app]
+view = "view.slint"
+linux = "bin/repos"
+windows = "bin/repos.exe"
+every = 30
+
+[[settings]]
+key = "stale_hours"
+label = "Horas até a mascote cobrar pendências"
+type = "int"
+default = 24
+min = 4
+max = 168
+step = 4
+
+[[settings]]
+key = "depth"
+label = "Profundidade da busca nas pastas"
+type = "int"
+default = 2
+min = 1
+max = 4
+step = 1
+
+[[settings]]
+key = "only_pending"
+label = "Mostrar só repositórios com pendências"
+type = "bool"
+default = false
+
+[[settings]]
+key = "fetch"
+label = "Buscar no remoto a cada 30 min (git fetch)"
+type = "bool"
+default = false
