@@ -79,15 +79,26 @@ mod tests {
         .unwrap();
         w.set(&[a.join(".git"), b.join(".git")]);
         std::fs::write(b.join(".git/refs/heads/main"), "x").unwrap();
-        let got = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // o aviso da escrita chega e aponta o repositório b. No Windows podem vir avisos a
+        // mais (de outro repositório, ou repetidos): só fazem o app reler, então o teste os
+        // ignora
         let pairs = [(a.clone(), a.join(".git")), (b.clone(), b.join(".git"))];
-        assert_eq!(owner(&got, pairs.iter().map(|(r, g)| (r, g))), Some(b.clone()));
-        // trava não avisa (antes, deixa chegar o resto dos avisos da escrita acima: no
-        // Windows eles vêm espalhados)
-        std::thread::sleep(Duration::from_millis(300));
-        while rx.try_recv().is_ok() {}
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut seen = Vec::new();
+        let found = loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let Ok(p) = rx.recv_timeout(left) else { break false };
+            let is_b = owner(&p, pairs.iter().map(|(r, g)| (r, g))) == Some(b.clone()) && p.ends_with("main");
+            seen.push(p);
+            if is_b {
+                break true;
+            }
+        };
+        assert!(found, "sem aviso da escrita em b; chegaram: {seen:?}");
+        // arquivo de trava não avisa
         std::fs::write(a.join(".git/index.lock"), "x").unwrap();
-        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+        let later: Vec<PathBuf> = std::iter::from_fn(|| rx.recv_timeout(Duration::from_millis(500)).ok()).take(50).collect();
+        assert!(later.iter().all(|p| p.extension().is_none_or(|e| e != "lock")), "{later:?}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }
