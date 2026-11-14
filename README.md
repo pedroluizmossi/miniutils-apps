@@ -56,8 +56,13 @@ Testes: `cargo test --workspace`.
    para Linux (estático, musl: roda em qualquer distro) e Windows e publica um Release com
    os executáveis (`repos-linux-x86_64`, `repos-windows-x86_64.exe`), as somas SHA-256 e a
    entrada pronta para o índice da loja (nas notas e em `registry-entry.json`).
-3. No repositório da loja, acrescente essa entrada à lista `plugins` do `registry.json`,
-   assine de novo (`miniutils --loja-assinar registry.json <chave>`) e envie.
+3. Com o Release pronto, no repositório da loja (`miniutils-store`):
+   ```sh
+   tools/publish.sh pedroluizmossi/miniutils-apps repos-v0.1.0
+   ```
+   O script monta a entrada a partir do manifesto e do Release, confere os executáveis,
+   instala numa pasta descartável, mostra o diff e, com o seu "s", assina com a sua chave e
+   envia. Tudo na sua máquina (ver o README da loja).
 
 A entrada fixa o commit da tag e, por sistema, o endereço e o SHA-256 do executável; o hub
 só instala se a assinatura do índice e o hash baterem. O executável é compilado pelo CI a
