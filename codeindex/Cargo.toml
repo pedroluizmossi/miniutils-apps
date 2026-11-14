@@ -1,0 +1,16 @@
+[package]
+name = "codeindex"
+version = "0.1.0"
+description = "Code index: MiniUtils external app that watches a code-index server (database-index) and searches it"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+miniutils-app = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# blocking HTTP client; rustls for https servers, no JSON/gzip extras
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+# parse the server's timestamps and print "5 min ago"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }

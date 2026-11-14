@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["sdk", "repos"]
+members = ["sdk", "repos", "codeindex"]
 
 [workspace.package]
 edition = "2024"

@@ -1,0 +1,58 @@
+# Code index: a MiniUtils external app (full access).
+# Format: top of src/core/plugins.rs; protocol: top of src/apps/external.rs (in the
+# MiniUtils repository). name, description and labels are English; the hub translates them
+# with i18n/<lang>.po.
+id = "io.github.pedroluizmossi.codeindex"
+name = "Code index"
+description = "Watches your code-index server: how many repositories are indexed, pending or in error, the latest sync and the enrichment progress. Search the code from the cell, open a result in the editor and start the next sync batch after a confirmation."
+icon = "coruja"
+# 2: the text and secret settings (server address and token)
+api = 2
+
+[app]
+view = "view.slint"
+linux = "bin/codeindex"
+windows = "bin/codeindex.exe"
+every = 30
+
+[[settings]]
+key = "url"
+label = "Server address"
+type = "text"
+default = "http://127.0.0.1:8765"
+max_len = 300
+
+[[settings]]
+key = "token"
+label = "Access token (cix_…)"
+type = "secret"
+default = ""
+max_len = 300
+
+[[settings]]
+key = "repos_dir"
+label = "Folder with the server's clones (.repos), to open results in the editor"
+type = "text"
+default = ""
+max_len = 1000
+
+[[settings]]
+key = "expect_server"
+label = "Alarm when the server is offline"
+type = "bool"
+default = false
+
+[[settings]]
+key = "notify_sync"
+label = "Notify when a sync finishes or fails"
+type = "bool"
+default = true
+
+[[settings]]
+key = "results"
+label = "Number of search results"
+type = "int"
+default = 10
+min = 5
+max = 30
+step = 5

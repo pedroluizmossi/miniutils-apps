@@ -1,0 +1,882 @@
+// View of the Code index app. The host fills theme, mascot and mood; the rest comes from
+// the executable (src/main.rs and src/views.rs), with {"type":"set","prop":"…","value":…}.
+// Text scales with theme.text-scale and rows grow with it. Visible text is English in
+// @tr(…); the hub translates it with i18n/<lang>.po.
+//
+// Sizes: a small cell (under ~360×260) shows the status, the counters and a running sync.
+// Bigger, four tabs: Search, Repositories, Sync and Health. The tab bodies are stacked and
+// only hidden (not rebuilt) when switching, so a typed query or a scroll position survives;
+// the text fields also take back the app's value when they are not being edited.
+import { ListView } from "std-widgets.slint";
+import { Theme } from "miniutils.slint";
+
+export struct HitRow {
+    // position in the app's list, sent back by "select"
+    idx: int,
+    // "repo/path:line"
+    title: string,
+    // language, kind, "documentation"
+    sub: string,
+    // a few lines of the match
+    snippet: string,
+    // "81%" (score) or ""
+    badge: string,
+}
+
+export struct RepoRow {
+    name: string,
+    short: string,
+    // indexed, outdated, pending, error, ignored
+    status: string,
+    line: string,
+    error: string,
+    expanded: bool,
+    detail: string,
+    summary: string,
+    can-index: bool,
+    can-remove: bool,
+    can-unignore: bool,
+    // the action waiting for a second click: index, remove, unignore or ""
+    confirm: string,
+}
+
+export struct LiveRepo {
+    name: string,
+    // queued, fetching, indexing, done, error, skipped
+    status: string,
+    line: string,
+    pct: float,
+}
+
+export struct JobRow {
+    id: string,
+    // queued, running, done, failed
+    status: string,
+    title: string,
+    line: string,
+    errors: string,
+    expanded: bool,
+}
+
+export struct Level {
+    label: string,
+    value: string,
+    pct: float,
+    // ok, warn, alarm
+    tone: string,
+}
+
+export struct Stat {
+    label: string,
+    value: string,
+    tone: string,
+}
+
+export struct Bar {
+    // 0..1 of the busiest day
+    h: float,
+    err: float,
+    label: string,
+    tip: string,
+}
+
+// Labels and colors of the statuses the server reports.
+global Look {
+    public pure function status-label(s: string) -> string {
+        if s == "indexed" { return @tr("indexed"); }
+        if s == "outdated" { return @tr("new push"); }
+        if s == "pending" { return @tr("pending"); }
+        if s == "error" { return @tr("error"); }
+        if s == "ignored" { return @tr("ignored"); }
+        if s == "queued" { return @tr("queued"); }
+        if s == "running" { return @tr("running"); }
+        if s == "fetching" { return @tr("downloading"); }
+        if s == "indexing" { return @tr("indexing"); }
+        if s == "done" { return @tr("done"); }
+        if s == "failed" { return @tr("failed"); }
+        if s == "skipped" { return @tr("skipped"); }
+        return s;
+    }
+
+    public pure function tone(t: Theme, s: string) -> color {
+        if s == "error" || s == "failed" || s == "alarm" { return t.alarm; }
+        if s == "pending" || s == "outdated" || s == "warn" || s == "running" || s == "queued" || s == "fetching" || s == "indexing" { return t.warn; }
+        if s == "indexed" || s == "done" || s == "ok" { return t.ok; }
+        return t.muted;
+    }
+}
+
+component Btn inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> label;
+    // the action the user is being asked to confirm
+    in property <bool> strong;
+    in property <bool> danger;
+    in property <bool> enabled: true;
+    callback clicked;
+    property <color> accent: danger ? theme.alarm : theme.fur;
+    horizontal-stretch: 0;
+    min-width: txt.preferred-width + 16px;
+    min-height: max(24px, txt.preferred-height + 8px);
+    background: !enabled ? transparent : touch.has-hover ? accent.with-alpha(0.22) : strong ? accent.with-alpha(0.14) : transparent;
+    border-width: 1px;
+    border-color: !enabled ? theme.muted.with-alpha(0.4) : touch.has-hover || strong ? accent : theme.muted;
+    txt := Text {
+        text: label;
+        color: enabled ? (danger && strong ? theme.alarm : theme.text) : theme.muted;
+        font-size: 11px * theme.text-scale;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A toggle in a row of choices (tabs, search mode, filters).
+component Chip inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> enabled: true;
+    callback clicked;
+    horizontal-stretch: 0;
+    min-width: txt.preferred-width + 14px;
+    min-height: max(24px, txt.preferred-height + 8px);
+    background: active ? theme.fur.with-alpha(0.22) : touch.has-hover ? theme.fur.with-alpha(0.1) : transparent;
+    border-width: 1px;
+    border-color: active ? theme.fur : theme.muted.with-alpha(0.6);
+    txt := Text {
+        text: label;
+        color: !enabled ? theme.muted : active ? theme.text : theme.sub;
+        font-size: 11px * theme.text-scale;
+        font-weight: active ? 700 : 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// One line of text. Enter sends `accepted`; every key sends `edited`. When the app's value
+// changes while the field is not being edited, the field shows it.
+component Field inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> value;
+    in property <string> placeholder;
+    in property <bool> mono;
+    out property <string> text: input.text;
+    callback accepted(string);
+    callback edited(string);
+    min-height: max(28px, 13px * theme.text-scale + 14px);
+    min-width: 80px;
+    background: theme.fur.with-alpha(0.06);
+    border-width: 1px;
+    border-color: input.has-focus ? theme.fur : theme.muted;
+    changed value => {
+        if !input.has-focus { input.text = value; }
+    }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        Rectangle {
+            if input.text == "": Text {
+                width: 100%;
+                height: 100%;
+                text: placeholder;
+                color: theme.muted;
+                font-size: 12px * theme.text-scale;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            input := TextInput {
+                width: 100%;
+                height: 100%;
+                text: root.value;
+                single-line: true;
+                color: theme.text;
+                font-family: mono ? theme.font-mono : theme.font-ui;
+                font-size: 12px * theme.text-scale;
+                vertical-alignment: center;
+                accessible-label: placeholder;
+                accepted => { root.accepted(self.text); }
+                edited => { root.edited(self.text); }
+            }
+        }
+    }
+}
+
+component Gauge inherits Rectangle {
+    in property <Theme> theme;
+    in property <float> pct;
+    in property <color> fill: theme.fur;
+    height: 6px;
+    background: theme.muted.with-alpha(0.25);
+    Rectangle {
+        x: 0;
+        width: parent.width * max(0, min(1, pct));
+        height: parent.height;
+        background: fill;
+    }
+}
+
+component Dot inherits Rectangle {
+    in property <color> fill;
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: fill;
+}
+
+component Note inherits Text {
+    in property <Theme> theme;
+    color: theme.sub;
+    font-size: 11px * theme.text-scale;
+    wrap: word-wrap;
+}
+
+// A clickable row of a list: its height follows its content.
+component Clickable inherits Rectangle {
+    in property <Theme> theme;
+    in property <bool> active;
+    callback clicked;
+    height: inner.preferred-height;
+    background: active ? theme.fur.with-alpha(0.16) : touch.has-hover ? theme.fur.with-alpha(0.07) : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    inner := VerticalLayout {
+        padding: 5px;
+        spacing: 2px;
+        @children
+    }
+}
+
+// ---------------------------------------------------------------- search
+
+component ResultList inherits Rectangle {
+    in property <Theme> theme;
+    in property <[HitRow]> results;
+    in property <int> selected;
+    callback select(int);
+    border-width: 1px;
+    border-color: theme.muted.with-alpha(0.5);
+    ListView {
+        for r in results: Clickable {
+            theme: theme;
+            active: r.idx == selected;
+            clicked => { root.select(r.idx); }
+            HorizontalLayout {
+                spacing: 6px;
+                Text { text: r.title; color: theme.text; font-family: theme.font-mono; font-size: 11px * theme.text-scale; font-weight: 700; overflow: elide; horizontal-stretch: 1; }
+                if r.badge != "": Text { text: r.badge; color: theme.sub; font-size: 10px * theme.text-scale; }
+            }
+            if r.sub != "": Text { text: r.sub; color: theme.sub; font-size: 10px * theme.text-scale; overflow: elide; }
+            Text { text: r.snippet; color: theme.sub; font-family: theme.font-mono; font-size: 10px * theme.text-scale; overflow: elide; }
+        }
+    }
+}
+
+component PreviewPane inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> title;
+    in property <string> body;
+    in property <string> note;
+    in property <bool> loading;
+    in property <bool> can-editor;
+    callback open-editor;
+    border-width: 1px;
+    border-color: theme.muted.with-alpha(0.5);
+    VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text { text: title; color: theme.text; font-family: theme.font-mono; font-size: 11px * theme.text-scale; font-weight: 700; overflow: elide; horizontal-stretch: 1; vertical-alignment: center; }
+            Btn { theme: theme; label: @tr("Open in editor"); enabled: can-editor; clicked => { root.open-editor(); } }
+        }
+        if loading: Note { theme: theme; text: @tr("Loading the file…"); }
+        if note != "": Note { theme: theme; text: note; }
+        // read-only text: select and copy with the mouse and Ctrl+C
+        Flickable {
+            vertical-stretch: 1;
+            viewport-width: max(self.width, code.preferred-width + 8px);
+            viewport-height: max(self.height, code.preferred-height + 8px);
+            code := TextInput {
+                x: 2px;
+                y: 2px;
+                width: max(parent.width - 4px, self.preferred-width);
+                height: self.preferred-height;
+                text: root.body;
+                read-only: true;
+                single-line: false;
+                wrap: no-wrap;
+                color: theme.text;
+                font-family: theme.font-mono;
+                font-size: 11px * theme.text-scale;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- repos
+
+component RepoItem inherits Rectangle {
+    in property <Theme> theme;
+    in property <RepoRow> r;
+    callback action(string, string);
+    height: inner.preferred-height;
+    background: r.expanded ? theme.fur.with-alpha(0.1) : touch.has-hover ? theme.fur.with-alpha(0.06) : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.action("repo-toggle", r.name); }
+    }
+    inner := VerticalLayout {
+        padding: 5px;
+        spacing: 3px;
+        HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Dot { fill: Look.tone(theme, r.status); }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                Text { text: r.short; color: theme.text; font-size: 12px * theme.text-scale; font-weight: 700; overflow: elide; }
+                if r.line != "": Text { text: r.line; color: theme.sub; font-size: 10px * theme.text-scale; overflow: elide; }
+            }
+            Text { text: Look.status-label(r.status); color: Look.tone(theme, r.status); font-size: 10px * theme.text-scale; vertical-alignment: center; }
+        }
+        if r.error != "": Text {
+            text: r.error;
+            color: theme.alarm;
+            font-family: theme.font-mono;
+            font-size: 10px * theme.text-scale;
+            wrap: r.expanded ? word-wrap : no-wrap;
+            overflow: elide;
+        }
+        if r.expanded && r.detail != "": Note { theme: theme; text: r.detail; }
+        if r.expanded && r.summary != "": Text { text: r.summary; color: theme.text; font-size: 11px * theme.text-scale; wrap: word-wrap; }
+        if r.expanded: HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Btn { theme: theme; label: @tr("Search here"); clicked => { root.action("repo-search", r.name); } }
+            if r.can-index: Btn {
+                theme: theme;
+                strong: r.confirm == "index";
+                label: r.confirm == "index" ? @tr("Click again to index") : @tr("Index now");
+                clicked => { root.action("repo-act", "index:" + r.name); }
+            }
+            if r.can-unignore: Btn {
+                theme: theme;
+                strong: r.confirm == "unignore";
+                label: r.confirm == "unignore" ? @tr("Click again to confirm") : @tr("Back to the queue");
+                clicked => { root.action("repo-act", "unignore:" + r.name); }
+            }
+            if r.can-remove: Btn {
+                theme: theme;
+                danger: true;
+                strong: r.confirm == "remove";
+                label: r.confirm == "remove" ? @tr("Click again to remove") : @tr("Remove from index");
+                clicked => { root.action("repo-act", "remove:" + r.name); }
+            }
+            Btn { theme: theme; label: @tr("Web"); clicked => { root.action("web", "repos?q=" + r.short); } }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- sync and health
+
+component JobItem inherits Rectangle {
+    in property <Theme> theme;
+    in property <JobRow> j;
+    callback toggle;
+    height: inner.preferred-height;
+    background: j.expanded ? theme.fur.with-alpha(0.1) : touch.has-hover ? theme.fur.with-alpha(0.06) : transparent;
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggle(); }
+    }
+    inner := VerticalLayout {
+        padding: 5px;
+        spacing: 2px;
+        HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Dot { fill: Look.tone(theme, j.status); }
+            }
+            Text { text: Look.status-label(j.status); color: Look.tone(theme, j.status); font-size: 11px * theme.text-scale; font-weight: 700; }
+            Text { text: j.title; color: theme.text; font-size: 11px * theme.text-scale; overflow: elide; horizontal-stretch: 1; }
+        }
+        if j.line != "": Note { theme: theme; text: j.line; wrap: no-wrap; overflow: elide; }
+        if j.expanded && j.errors != "": Text { text: j.errors; color: theme.text; font-family: theme.font-mono; font-size: 10px * theme.text-scale; wrap: word-wrap; }
+    }
+}
+
+component StatBox inherits Rectangle {
+    in property <Theme> theme;
+    in property <Stat> s;
+    min-width: max(v.preferred-width, l.preferred-width) + 16px;
+    horizontal-stretch: 1;
+    border-width: 1px;
+    border-color: theme.muted.with-alpha(0.4);
+    VerticalLayout {
+        padding: 6px;
+        spacing: 1px;
+        v := Text { text: s.value; color: s.tone == "" ? theme.text : Look.tone(theme, s.tone); font-size: 15px * theme.text-scale; font-weight: 700; }
+        l := Text { text: s.label; color: theme.sub; font-size: 10px * theme.text-scale; }
+    }
+}
+
+component Section inherits Text {
+    in property <Theme> theme;
+    color: theme.text;
+    font-family: theme.font-title;
+    font-size: 13px * theme.text-scale;
+    font-weight: 700;
+}
+
+export component Main inherits Rectangle {
+    in property <Theme> theme;
+    in property <image> mascot;
+    in property <string> mood;
+    callback action(string, string);
+
+    // header
+    in property <string> subtitle: @tr("starting…");
+    // online, offline, unconfigured, denied, error
+    in property <string> server-state: "offline";
+    // what is wrong and where to fix it; "" when online
+    in property <string> notice;
+    // the server stopped answering and the data on screen is getting old; "" otherwise
+    in property <string> warning;
+    // search, repos, sync, health
+    in property <string> tab: "search";
+    in property <int> indexed;
+    in property <int> pending;
+    in property <int> errors;
+    in property <int> ignored;
+    in property <int> outdated;
+    in property <bool> can-sync;
+    in property <bool> can-admin;
+    in property <bool> can-enrich;
+    in property <string> last-sync;
+    // the running sync job
+    in property <bool> job-active;
+    in property <string> job-title;
+    in property <float> job-pct;
+    in property <string> job-line;
+    in property <[LiveRepo]> live-repos;
+
+    // search
+    // search (hybrid), symbol, grep
+    in property <string> search-mode: "search";
+    in property <string> query;
+    // all, code, doc
+    in property <string> search-kind: "all";
+    in property <string> search-repos;
+    in property <bool> grep-regex;
+    in property <bool> grep-case;
+    in property <bool> searching;
+    in property <string> search-note;
+    in property <[HitRow]> results;
+    in property <int> selected: -1;
+    in property <string> preview-title;
+    in property <string> preview-text;
+    in property <string> preview-note;
+    in property <bool> preview-loading;
+    in property <bool> can-editor;
+
+    // repositories
+    in property <string> repo-filter;
+    // all, indexed, outdated, pending, error, ignored
+    in property <string> repo-status: "all";
+    in property <[RepoRow]> repo-rows;
+    in property <string> repo-count;
+    in property <string> repo-note;
+
+    // sync
+    // batch size; 0 = the server's default
+    in property <int> batch;
+    // idle, checking, confirm, starting
+    in property <string> sync-state: "idle";
+    in property <string> sync-preview;
+    in property <string> sync-note;
+    in property <[JobRow]> history;
+    in property <bool> can-orgs;
+    in property <bool> orgs-confirm;
+    in property <string> org-note;
+
+    // health
+    in property <[Level]> meters;
+    in property <[Stat]> enrich-stats;
+    in property <int> usage-days: 7;
+    in property <bool> usage-loading;
+    in property <[Stat]> usage-stats;
+    in property <[Bar]> usage-bars;
+    in property <[string]> top-queries;
+    in property <string> clients;
+
+    property <bool> small: self.height < 260px || self.width < 360px;
+    property <bool> online: server-state == "online";
+
+    function dot-color() -> color {
+        if server-state == "online" { return errors > 0 ? theme.alarm : pending > 0 ? theme.warn : theme.ok; }
+        if server-state == "offline" { return theme.muted; }
+        return theme.alarm;
+    }
+
+    // the web UI page that matches the open tab
+    function web-hash() -> string {
+        if tab == "repos" { return "repos"; }
+        if tab == "sync" { return "indexing"; }
+        if tab == "health" { return "usage"; }
+        return "search";
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+
+        // ------------------------------------------------ header
+        HorizontalLayout {
+            spacing: 10px;
+            Image {
+                source: mascot;
+                width: small ? 37px : 48px;
+                height: small ? 32px : 42px;
+                image-rendering: pixelated;
+                image-fit: contain;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text { text: @tr("Code index"); color: theme.text; font-family: theme.font-title; font-size: (small ? 14px : 16px) * theme.text-scale; font-weight: 700; overflow: elide; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Dot { fill: dot-color(); }
+                    }
+                    Text { text: subtitle; color: theme.sub; font-size: 11px * theme.text-scale; overflow: elide; horizontal-stretch: 1; }
+                }
+            }
+            if !small: VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 6px;
+                    Btn { theme: theme; label: @tr("Refresh"); clicked => { root.action("refresh", ""); } }
+                    Btn { theme: theme; label: @tr("Open web UI"); enabled: server-state != "unconfigured"; clicked => { root.action("web", root.web-hash()); } }
+                }
+            }
+        }
+
+        if warning != "": Text { text: warning; color: theme.warn; font-size: 11px * theme.text-scale; wrap: word-wrap; }
+
+        // ------------------------------------------------ the running sync, on every tab
+        if job-active: VerticalLayout {
+            spacing: 3px;
+            HorizontalLayout {
+                spacing: 6px;
+                Text { text: job-title; color: theme.text; font-size: 11px * theme.text-scale; font-weight: 700; overflow: elide; horizontal-stretch: 1; }
+                Text { text: round(job-pct * 100) + "%"; color: theme.sub; font-size: 11px * theme.text-scale; }
+            }
+            Gauge { theme: theme; pct: job-pct; fill: theme.warn; }
+            if job-line != "": Note { theme: theme; text: job-line; wrap: no-wrap; overflow: elide; }
+        }
+
+        // ------------------------------------------------ small cell
+        if small && online: HorizontalLayout {
+            spacing: 6px;
+            StatBox { theme: theme; s: { label: @tr("indexed"), value: "" + indexed, tone: "" }; }
+            StatBox { theme: theme; s: { label: @tr("pending"), value: "" + pending, tone: pending > 0 ? "warn" : "" }; }
+            StatBox { theme: theme; s: { label: @tr("errors"), value: "" + errors, tone: errors > 0 ? "alarm" : "" }; }
+        }
+        if small && online && last-sync != "" && !job-active: Note { theme: theme; text: last-sync; wrap: no-wrap; overflow: elide; }
+        if small && notice != "": Note { theme: theme; text: notice; overflow: elide; }
+        if small: Rectangle { vertical-stretch: 1; }
+
+        // ------------------------------------------------ tabs
+        if !small: HorizontalLayout {
+            spacing: 4px;
+            alignment: start;
+            Chip { theme: theme; label: @tr("Search"); active: tab == "search"; clicked => { root.action("tab", "search"); } }
+            Chip { theme: theme; label: errors > 0 ? @tr("Repositories ({} errors)", errors) : @tr("Repositories"); active: tab == "repos"; clicked => { root.action("tab", "repos"); } }
+            Chip { theme: theme; label: job-active ? @tr("Sync (running)") : @tr("Sync"); active: tab == "sync"; clicked => { root.action("tab", "sync"); } }
+            Chip { theme: theme; label: @tr("Health"); active: tab == "health"; clicked => { root.action("tab", "health"); } }
+        }
+
+        if !small: Rectangle {
+            vertical-stretch: 1;
+
+            // not online: what is wrong, in place of the tabs
+            if !online: VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: notice != "" ? notice : subtitle;
+                    color: theme.sub;
+                    font-size: 12px * theme.text-scale;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Btn { theme: theme; label: @tr("Try again"); clicked => { root.action("refresh", ""); } }
+                }
+            }
+
+            // -------------------------------------------- Search
+            search-tab := Rectangle {
+                visible: online && tab == "search";
+                property <bool> wide: self.width >= 720px;
+                VerticalLayout {
+                    spacing: 6px;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Chip { theme: theme; label: @tr("Meaning"); active: search-mode == "search"; clicked => { root.action("search-mode", "search"); } }
+                        Chip { theme: theme; label: @tr("Symbol"); active: search-mode == "symbol"; clicked => { root.action("search-mode", "symbol"); } }
+                        Chip { theme: theme; label: @tr("Exact text"); active: search-mode == "grep"; clicked => { root.action("search-mode", "grep"); } }
+                        Rectangle { width: 10px; }
+                        if search-mode == "search": Chip { theme: theme; label: @tr("All"); active: search-kind == "all"; clicked => { root.action("search-kind", "all"); } }
+                        if search-mode == "search": Chip { theme: theme; label: @tr("Code"); active: search-kind == "code"; clicked => { root.action("search-kind", "code"); } }
+                        if search-mode == "search": Chip { theme: theme; label: @tr("Docs"); active: search-kind == "doc"; clicked => { root.action("search-kind", "doc"); } }
+                        if search-mode == "grep": Chip { theme: theme; label: @tr("Regex"); active: grep-regex; clicked => { root.action("grep-regex", ""); } }
+                        if search-mode == "grep": Chip { theme: theme; label: @tr("Match case"); active: grep-case; clicked => { root.action("grep-case", ""); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        q := Field {
+                            theme: theme;
+                            horizontal-stretch: 3;
+                            mono: search-mode != "search";
+                            value: query;
+                            placeholder: search-mode == "symbol" ? @tr("Symbol name (Class, Class.method, Class.*)") : search-mode == "grep" ? @tr("Exact text or regex") : @tr("Describe what you are looking for");
+                            accepted(t) => { root.action("search", t); }
+                        }
+                        Field {
+                            theme: theme;
+                            horizontal-stretch: 1;
+                            value: search-repos;
+                            placeholder: @tr("in repos (optional)");
+                            edited(t) => { root.action("search-repos", t); }
+                            accepted(t) => { root.action("search", q.text); }
+                        }
+                        Btn { theme: theme; strong: true; label: searching ? @tr("Searching…") : @tr("Search"); enabled: !searching; clicked => { root.action("search", q.text); } }
+                    }
+                    if search-note != "": Note { theme: theme; text: search-note; wrap: no-wrap; overflow: elide; }
+                    if results.length == 0: Rectangle { vertical-stretch: 1; }
+                    if results.length > 0 && wide: HorizontalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        ResultList { theme: theme; results: results; selected: selected; horizontal-stretch: 2; select(i) => { root.action("select", "" + i); } }
+                        PreviewPane {
+                            theme: theme;
+                            horizontal-stretch: 3;
+                            title: preview-title;
+                            body: preview-text;
+                            note: preview-note;
+                            loading: preview-loading;
+                            can-editor: can-editor;
+                            open-editor => { root.action("open-editor", ""); }
+                        }
+                    }
+                    if results.length > 0 && !wide: VerticalLayout {
+                        spacing: 6px;
+                        vertical-stretch: 1;
+                        ResultList { theme: theme; results: results; selected: selected; vertical-stretch: 1; select(i) => { root.action("select", "" + i); } }
+                        PreviewPane {
+                            theme: theme;
+                            vertical-stretch: 1;
+                            title: preview-title;
+                            body: preview-text;
+                            note: preview-note;
+                            loading: preview-loading;
+                            can-editor: can-editor;
+                            open-editor => { root.action("open-editor", ""); }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------- Repositories
+            Rectangle {
+                visible: online && tab == "repos";
+                VerticalLayout {
+                    spacing: 6px;
+                    Field {
+                        theme: theme;
+                        value: repo-filter;
+                        placeholder: @tr("Filter by name");
+                        edited(t) => { root.action("repo-filter", t); }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Chip { theme: theme; label: @tr("All ({})", indexed + pending + errors); active: repo-status == "all"; clicked => { root.action("repo-status", "all"); } }
+                        Chip { theme: theme; label: @tr("Errors ({})", errors); active: repo-status == "error"; clicked => { root.action("repo-status", "error"); } }
+                        Chip { theme: theme; label: @tr("Pending ({})", pending); active: repo-status == "pending"; clicked => { root.action("repo-status", "pending"); } }
+                        Chip { theme: theme; label: @tr("New push ({})", outdated); active: repo-status == "outdated"; clicked => { root.action("repo-status", "outdated"); } }
+                        Chip { theme: theme; label: @tr("Ignored ({})", ignored); active: repo-status == "ignored"; clicked => { root.action("repo-status", "ignored"); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Note { theme: theme; text: repo-count; wrap: no-wrap; }
+                        Text { text: repo-note; color: theme.text; font-size: 11px * theme.text-scale; overflow: elide; horizontal-stretch: 1; horizontal-alignment: right; }
+                    }
+                    Rectangle {
+                        vertical-stretch: 1;
+                        border-width: 1px;
+                        border-color: theme.muted.with-alpha(0.5);
+                        ListView {
+                            for r in repo-rows: RepoItem {
+                                theme: theme;
+                                r: r;
+                                action(name, arg) => { root.action(name, arg); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------- Sync
+            Rectangle {
+                visible: online && tab == "sync";
+                VerticalLayout {
+                    spacing: 6px;
+                    if !can-sync: Note { theme: theme; text: @tr("This token cannot see or start syncs (it needs index:write)."); }
+                    if can-sync: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        if sync-state == "idle": Btn { theme: theme; strong: true; label: @tr("Index next batch…"); enabled: !job-active; clicked => { root.action("sync-preview", ""); } }
+                        if sync-state == "checking": Note { theme: theme; text: @tr("Asking the server…"); vertical-alignment: center; }
+                        if sync-state == "confirm": Btn { theme: theme; strong: true; label: @tr("Start indexing"); clicked => { root.action("sync-confirm", ""); } }
+                        if sync-state == "confirm": Btn { theme: theme; label: @tr("Cancel"); clicked => { root.action("sync-cancel", ""); } }
+                        if sync-state == "starting": Note { theme: theme; text: @tr("Starting…"); vertical-alignment: center; }
+                        Rectangle { width: 8px; }
+                        Text { text: @tr("Batch"); color: theme.sub; font-size: 11px * theme.text-scale; vertical-alignment: center; }
+                        Btn { theme: theme; label: "−"; enabled: batch > 0; clicked => { root.action("batch", "-1"); } }
+                        Text { text: batch == 0 ? @tr("default") : "" + batch; color: theme.text; font-size: 11px * theme.text-scale; vertical-alignment: center; min-width: 44px; horizontal-alignment: center; }
+                        Btn { theme: theme; label: "+"; enabled: batch < 50; clicked => { root.action("batch", "1"); } }
+                        if can-orgs: Rectangle { width: 8px; }
+                        if can-orgs: Btn {
+                            theme: theme;
+                            strong: orgs-confirm;
+                            label: orgs-confirm ? @tr("Click again to look") : @tr("Look for new repos");
+                            clicked => { root.action("orgs-refresh", ""); }
+                        }
+                    }
+                    if sync-state == "confirm": Text { text: sync-preview; color: theme.text; font-size: 11px * theme.text-scale; wrap: word-wrap; }
+                    if sync-note != "": Note { theme: theme; text: sync-note; }
+                    if org-note != "": Note { theme: theme; text: org-note; }
+                    Flickable {
+                        vertical-stretch: 1;
+                        viewport-width: self.width;
+                        viewport-height: max(self.height, sync-list.preferred-height);
+                        sync-list := VerticalLayout {
+                            width: parent.width;
+                            alignment: start;
+                            spacing: 4px;
+                            if job-active && live-repos.length > 0: Section { theme: theme; text: @tr("This batch"); }
+                            for lr in live-repos: VerticalLayout {
+                                spacing: 2px;
+                                padding-left: 4px;
+                                padding-right: 4px;
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text { text: lr.name; color: theme.text; font-size: 11px * theme.text-scale; overflow: elide; horizontal-stretch: 1; }
+                                    Text { text: Look.status-label(lr.status); color: Look.tone(theme, lr.status); font-size: 10px * theme.text-scale; }
+                                }
+                                Gauge { theme: theme; pct: lr.pct; fill: Look.tone(theme, lr.status); height: 4px; }
+                                if lr.line != "": Note { theme: theme; text: lr.line; wrap: no-wrap; overflow: elide; }
+                            }
+                            if history.length > 0: Section { theme: theme; text: @tr("Recent syncs"); }
+                            if can-sync && history.length == 0: Note { theme: theme; text: @tr("No sync yet."); }
+                            for j in history: JobItem {
+                                theme: theme;
+                                j: j;
+                                toggle => { root.action("job-toggle", j.id); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // -------------------------------------------- Health
+            Rectangle {
+                visible: online && tab == "health";
+                Flickable {
+                    viewport-width: self.width;
+                    viewport-height: max(self.height, health-list.preferred-height);
+                    health-list := VerticalLayout {
+                        width: parent.width;
+                        alignment: start;
+                        spacing: 6px;
+                        Section { theme: theme; text: @tr("Enrichment"); }
+                        if !can-enrich: Note { theme: theme; text: @tr("The enrichment status needs a token with enrich:write."); }
+                        for m in meters: VerticalLayout {
+                            spacing: 2px;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Text { text: m.label; color: theme.text; font-size: 11px * theme.text-scale; horizontal-stretch: 1; overflow: elide; }
+                                Text { text: m.value; color: theme.sub; font-size: 10px * theme.text-scale; }
+                            }
+                            Gauge { theme: theme; pct: m.pct; fill: Look.tone(theme, m.tone); }
+                        }
+                        if enrich-stats.length > 0: HorizontalLayout {
+                            spacing: 6px;
+                            for s in enrich-stats: StatBox { theme: theme; s: s; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Section { theme: theme; text: @tr("My usage"); vertical-alignment: center; horizontal-stretch: 1; }
+                            if usage-loading: Note { theme: theme; text: @tr("Loading…"); vertical-alignment: center; }
+                            Chip { theme: theme; label: @tr("7 days"); active: usage-days == 7; clicked => { root.action("usage-days", "7"); } }
+                            Chip { theme: theme; label: @tr("30 days"); active: usage-days == 30; clicked => { root.action("usage-days", "30"); } }
+                        }
+                        if usage-stats.length > 0: HorizontalLayout {
+                            spacing: 6px;
+                            for s in usage-stats: StatBox { theme: theme; s: s; }
+                        }
+                        // calls per day, the newest on the right
+                        if usage-bars.length > 0: HorizontalLayout {
+                            height: 64px;
+                            spacing: 2px;
+                            for b in usage-bars: Rectangle {
+                                horizontal-stretch: 1;
+                                Rectangle {
+                                    y: parent.height - self.height;
+                                    width: parent.width;
+                                    height: max(1px, parent.height * b.h);
+                                    background: b.h > 0 ? theme.fur.with-alpha(0.7) : theme.muted.with-alpha(0.3);
+                                }
+                                Rectangle {
+                                    y: parent.height - self.height;
+                                    width: parent.width;
+                                    height: parent.height * b.err;
+                                    background: theme.alarm;
+                                }
+                                TouchArea { }
+                            }
+                        }
+                        if usage-bars.length > 0 && usage-bars.length <= 14: HorizontalLayout {
+                            spacing: 2px;
+                            for b in usage-bars: Text { text: b.label; color: theme.muted; font-size: 9px * theme.text-scale; horizontal-alignment: center; horizontal-stretch: 1; }
+                        }
+                        if top-queries.length > 0: Section { theme: theme; text: @tr("Most repeated searches"); }
+                        for tq in top-queries: Text { text: tq; color: theme.sub; font-family: theme.font-mono; font-size: 10px * theme.text-scale; overflow: elide; }
+                        if clients != "": Note { theme: theme; text: @tr("Clients: {}", clients); }
+                    }
+                }
+            }
+        }
+    }
+}

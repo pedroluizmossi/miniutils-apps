@@ -9,6 +9,7 @@ cell.
 |---|---|
 | `sdk/` | crate `miniutils-app`: the app side of the protocol (`listen`, `set`, `mood`, `fact`, `migrated`…), translation of the app's own texts (`i18n::Catalog`) and per-OS odds and ends (`os::open_terminal`, `os::open_path`, `os::pick_folder`, `os::command` without a window on Windows) |
 | `repos/` | **Repositories**: your Git repositories and what is left to commit and push, with one-click push and pull, the AI agent in each one and the GitHub CI |
+| `codeindex/` | **Code index**: watches a code-index server (repositories indexed, pending, in error, the latest sync), searches it and starts the next sync batch; needs a hub with `api = 2` |
 
 Data with a versioned format: `start` carries `data_version` (the version of the data in
 the folder). If it is lower than the `version` of `[data]` in your manifest, migrate and
@@ -55,6 +56,15 @@ cargo build -p repos
 mkdir -p repos/bin && ln -sf ../../target/debug/repos repos/bin/repos
 # in the hub's repository:
 cargo run -- --plugin-dev ../miniutils-apps/repos
+```
+
+Every app of this repository at once (repeat `--plugin-dev`, one folder each; needs a hub
+that accepts it more than once):
+
+```sh
+cargo build --workspace
+# in the hub's repository:
+cargo run -- --plugin-dev ../miniutils-apps/repos --plugin-dev ../miniutils-apps/codeindex
 ```
 
 In dev mode the link in `bin/` works, and each `cargo build -p repos` restarts the app in

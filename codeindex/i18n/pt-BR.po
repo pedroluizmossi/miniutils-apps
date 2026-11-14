@@ -1,0 +1,546 @@
+# Brazilian Portuguese translation of the Code index app.
+# The hub uses it for view.slint and manifest.toml; the executable embeds it for the texts
+# it builds (src/i18n.rs). The test i18n::tests::catalog_covers_every_string checks that
+# every text has an entry here and that no entry is unused.
+msgid ""
+msgstr ""
+"Language: pt_BR\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+# manifest.toml
+
+msgid "Code index"
+msgstr "Índice de código"
+
+msgid "Watches your code-index server: how many repositories are indexed, pending or in error, the latest sync and the enrichment progress. Search the code from the cell, open a result in the editor and start the next sync batch after a confirmation."
+msgstr "Acompanha o seu servidor code-index: quantos repositórios estão indexados, pendentes ou com erro, a última sincronização e o andamento do enriquecimento. Busque no código pela célula, abra um resultado no editor e inicie o próximo lote de sincronização depois de confirmar."
+
+msgid "Alarm when the server is offline"
+msgstr "Alarme quando o servidor estiver fora do ar"
+
+msgid "Notify when a sync finishes or fails"
+msgstr "Avisar quando uma sincronização terminar ou falhar"
+
+msgid "Number of search results"
+msgstr "Número de resultados da busca"
+
+# view.slint
+
+msgid "starting…"
+msgstr "iniciando…"
+
+msgid "Open web UI"
+msgstr "Abrir a interface web"
+
+msgid "Refresh"
+msgstr "Atualizar"
+
+msgid "Server address"
+msgstr "Endereço do servidor"
+
+msgid "Access token (cix_…)"
+msgstr "Token de acesso (cix_…)"
+
+msgid "Folder with the server's clones (.repos), to open results in the editor"
+msgstr "Pasta com os clones do servidor (.repos), para abrir resultados no editor"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Starting…"
+msgstr "Iniciando…"
+
+# summary, states and errors
+
+msgid "{} indexed · {} pending"
+msgstr "{} indexados · {} pendentes"
+
+msgid "{} errors"
+msgstr "{} erros"
+
+msgid "Not configured"
+msgstr "Não configurado"
+
+msgid "Not configured: type the server's token in Settings › Apps"
+msgstr "Não configurado: digite o token do servidor em Configurações › Apps"
+
+msgid "Server offline"
+msgstr "Servidor fora do ar"
+
+msgid "Token rejected"
+msgstr "Token recusado"
+
+msgid "Token lacks permission"
+msgstr "Token sem permissão"
+
+msgid "Server error"
+msgstr "Erro do servidor"
+
+msgid "The server rejected the token (401): update it in Settings › Apps"
+msgstr "O servidor recusou o token (401): atualize-o em Configurações › Apps"
+
+msgid "The token lacks a permission: {}"
+msgstr "O token não tem uma permissão: {}"
+
+msgid "The server answered with an error: {}"
+msgstr "O servidor respondeu com um erro: {}"
+
+# sync
+
+msgid "Last sync failed · {}"
+msgstr "Última sincronização falhou · {}"
+
+msgid "Last sync: {} indexed · {}"
+msgstr "Última sincronização: {} indexados · {}"
+
+msgid "Sync started"
+msgstr "Sincronização iniciada"
+
+# search
+
+msgid "Searching…"
+msgstr "Buscando…"
+
+msgid "No results for “{}”"
+msgstr "Nenhum resultado para “{}”"
+
+# time
+
+msgid "{} min ago"
+msgstr "há {} min"
+
+msgid "{} h ago"
+msgstr "há {} h"
+
+msgid "{} d ago"
+msgstr "há {} d"
+
+# notifications and chatter between mascots
+
+msgid "Sync finished: {} indexed"
+msgstr "Sincronização concluída: {} indexados"
+
+msgid "Sync finished: {} indexed, {} failed"
+msgstr "Sincronização concluída: {} indexados, {} com falha"
+
+msgid "Sync failed"
+msgstr "A sincronização falhou"
+
+msgid "Sync failed: {}"
+msgstr "A sincronização falhou: {}"
+
+msgid "sync"
+msgstr "sincronização"
+
+msgid "code index"
+msgstr "índice de código"
+
+msgid "repos in the queue"
+msgstr "repositórios na fila"
+
+# tabs, search, repositories, sync and health
+
+msgid " · {} results"
+msgstr " · {} resultados"
+
+msgid "30 days"
+msgstr "30 dias"
+
+msgid "7 days"
+msgstr "7 dias"
+
+msgid "API operations linked to code"
+msgstr "Operações da API ligadas ao código"
+
+msgid "Agents working"
+msgstr "Agentes trabalhando"
+
+msgid "All"
+msgstr "Tudo"
+
+msgid "All ({})"
+msgstr "Todos ({})"
+
+msgid "Asking the server…"
+msgstr "Consultando o servidor…"
+
+msgid "Average"
+msgstr "Média"
+
+msgid "Back to the queue"
+msgstr "Voltar para a fila"
+
+msgid "Batch"
+msgstr "Lote"
+
+msgid "Calls"
+msgstr "Chamadas"
+
+msgid "Cannot reach {}: trying again every 30 s"
+msgstr "Não foi possível acessar {}: nova tentativa a cada 30 s"
+
+msgid "Checking the other repositories"
+msgstr "Conferindo os demais repositórios"
+
+msgid "Choosing the batch"
+msgstr "Escolhendo o lote"
+
+msgid "Click again to confirm"
+msgstr "Clique de novo para confirmar"
+
+msgid "Click again to index"
+msgstr "Clique de novo para indexar"
+
+msgid "Click again to look"
+msgstr "Clique de novo para procurar"
+
+msgid "Click again to remove"
+msgstr "Clique de novo para remover"
+
+msgid "Clients: {}"
+msgstr "Clientes: {}"
+
+msgid "Code"
+msgstr "Código"
+
+msgid "Cost"
+msgstr "Custo"
+
+msgid "Describe what you are looking for"
+msgstr "Descreva o que você procura"
+
+msgid "Discovering repositories"
+msgstr "Descobrindo repositórios"
+
+msgid "Doc pages to review"
+msgstr "Páginas de doc para revisar"
+
+msgid "Docs"
+msgstr "Docs"
+
+msgid "Downloading"
+msgstr "Baixando"
+
+msgid "Enrichment"
+msgstr "Enriquecimento"
+
+msgid "Errors"
+msgstr "Erros"
+
+msgid "Errors ({})"
+msgstr "Erros ({})"
+
+msgid "Exact text"
+msgstr "Texto exato"
+
+msgid "Exact text or regex"
+msgstr "Texto exato ou regex"
+
+msgid "File summaries"
+msgstr "Resumos de arquivos"
+
+msgid "Filter by name"
+msgstr "Filtrar pelo nome"
+
+msgid "Finishing"
+msgstr "Finalizando"
+
+msgid "Health"
+msgstr "Saúde"
+
+msgid "Ignored ({})"
+msgstr "Ignorados ({})"
+
+msgid "Index next batch…"
+msgstr "Indexar o próximo lote…"
+
+msgid "Index now"
+msgstr "Indexar agora"
+
+msgid "Indexed: {}"
+msgstr "Indexados: {}"
+
+msgid "Indexing"
+msgstr "Indexando"
+
+msgid "Indexing {} started (see Sync)"
+msgstr "Indexação de {} iniciada (veja Sincronização)"
+
+msgid "Loading the file…"
+msgstr "Carregando o arquivo…"
+
+msgid "Loading…"
+msgstr "Carregando…"
+
+msgid "Look for new repos"
+msgstr "Procurar repos novos"
+
+msgid "Looking for new repositories…"
+msgstr "Procurando repositórios novos…"
+
+msgid "Match case"
+msgstr "Maiúsc./minúsc."
+
+msgid "Meaning"
+msgstr "Significado"
+
+msgid "Most repeated searches"
+msgstr "Buscas mais repetidas"
+
+msgid "My usage"
+msgstr "Meu uso"
+
+msgid "New push ({})"
+msgstr "Push novo ({})"
+
+msgid "Next batch ({}): {}{} · {} left after it"
+msgstr "Próximo lote ({}): {}{} · restam {} depois dele"
+
+msgid "No new repositories"
+msgstr "Nenhum repositório novo"
+
+msgid "No repository matches"
+msgstr "Nenhum repositório corresponde"
+
+msgid "No repository named “{}”"
+msgstr "Nenhum repositório chamado “{}”"
+
+msgid "No sync yet."
+msgstr "Nenhuma sincronização ainda."
+
+msgid "Not found: {}"
+msgstr "Não encontrado: {}"
+
+msgid "Not now: {}"
+msgstr "Agora não: {}"
+
+msgid "Nothing to index: every repository is up to date"
+msgstr "Nada para indexar: todos os repositórios estão em dia"
+
+msgid "Open in editor"
+msgstr "Abrir no editor"
+
+msgid "Open tasks"
+msgstr "Tarefas abertas"
+
+msgid "Pending ({})"
+msgstr "Pendentes ({})"
+
+msgid "Recent syncs"
+msgstr "Sincronizações recentes"
+
+msgid "Regex"
+msgstr "Regex"
+
+msgid "Remove from index"
+msgstr "Tirar do índice"
+
+msgid "Repositories"
+msgstr "Repositórios"
+
+msgid "Repositories ({} errors)"
+msgstr "Repositórios ({} com erro)"
+
+msgid "Repository cards"
+msgstr "Cartões dos repositórios"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Search here"
+msgstr "Buscar aqui"
+
+msgid "Showing {} of {}: narrow the filter"
+msgstr "Mostrando {} de {}: refine o filtro"
+
+msgid "Start indexing"
+msgstr "Iniciar a indexação"
+
+msgid "Starting"
+msgstr "Iniciando"
+
+msgid "Symbol"
+msgstr "Símbolo"
+
+msgid "Symbol name (Class, Class.method, Class.*)"
+msgstr "Nome do símbolo (Classe, Classe.metodo, Classe.*)"
+
+msgid "Sync"
+msgstr "Sincronização"
+
+msgid "Sync (running)"
+msgstr "Sincronização (rodando)"
+
+msgid "The enrichment status needs a token with enrich:write."
+msgstr "O andamento do enriquecimento precisa de um token com enrich:write."
+
+msgid "The file is not in the clones folder (Settings › Apps)"
+msgstr "O arquivo não está na pasta dos clones (Configurações › Apps)"
+
+msgid "This batch"
+msgstr "Este lote"
+
+msgid "This token cannot see or start syncs (it needs index:write)."
+msgstr "Este token não vê nem inicia sincronizações (precisa de index:write)."
+
+msgid "Too many requests: try again in a moment"
+msgstr "Requisições demais: tente de novo daqui a pouco"
+
+msgid "Try again"
+msgstr "Tentar de novo"
+
+msgid "Waiting for a worker"
+msgstr "Aguardando um worker"
+
+msgid "Web"
+msgstr "Web"
+
+msgid "Working on {}…"
+msgstr "Trabalhando em {}…"
+
+msgid "by {}"
+msgstr "por {}"
+
+msgid "commit {}"
+msgstr "commit {}"
+
+msgid "default"
+msgstr "padrão"
+
+msgid "documentation"
+msgstr "documentação"
+
+msgid "done"
+msgstr "pronto"
+
+msgid "downloading"
+msgstr "baixando"
+
+msgid "error"
+msgstr "erro"
+
+msgid "errors"
+msgstr "erros"
+
+msgid "failed"
+msgstr "falhou"
+
+msgid "ignored"
+msgstr "ignorado"
+
+msgid "in repos (optional)"
+msgstr "nos repos (opcional)"
+
+msgid "indexed"
+msgstr "indexado"
+
+msgid "indexed {}"
+msgstr "indexado {}"
+
+msgid "indexing"
+msgstr "indexando"
+
+msgid "just now"
+msgstr "agora há pouco"
+
+msgid "new push"
+msgstr "push novo"
+
+msgid "org {}"
+msgstr "org {}"
+
+msgid "pending"
+msgstr "pendente"
+
+msgid "pushed {}"
+msgstr "push {}"
+
+msgid "queued"
+msgstr "na fila"
+
+msgid "running"
+msgstr "rodando"
+
+msgid "skipped"
+msgstr "pulado"
+
+msgid "started {}"
+msgstr "começou {}"
+
+msgid "took {}"
+msgstr "levou {}"
+
+msgid "{} chunks"
+msgstr "{} trechos"
+
+msgid "{} failed"
+msgstr "{} com falha"
+
+msgid "{} files"
+msgstr "{} arquivos"
+
+msgid "{} files skipped"
+msgstr "{} arquivos descartados"
+
+msgid "{} h"
+msgstr "{} h"
+
+msgid "{} indexed"
+msgstr "{} indexados"
+
+msgid "{} indexed · {} pending · 1 error"
+msgstr "{} indexados · {} pendentes · 1 erro"
+
+msgid "{} indexed · {} pending · {} errors"
+msgstr "{} indexados · {} pendentes · {} erros"
+
+msgid "{} is back in the queue"
+msgstr "{} voltou para a fila"
+
+msgid "{} left the index"
+msgstr "{} saiu do índice"
+
+msgid "{} min"
+msgstr "{} min"
+
+msgid "{} new repositories in the queue"
+msgstr "{} repositórios novos na fila"
+
+msgid "{} of {}"
+msgstr "{} de {}"
+
+msgid "{} of {} files"
+msgstr "{} de {} arquivos"
+
+msgid "{} of {} up to date · {} stale"
+msgstr "{} de {} em dia · {} desatualizados"
+
+msgid "{} of {} · {} stale"
+msgstr "{} de {} · {} desatualizados"
+
+msgid "{} repositories"
+msgstr "{} repositórios"
+
+msgid "{} results (more exist: narrow the search)"
+msgstr "{} resultados (há mais: refine a busca)"
+
+msgid "{} results · click one to see the file"
+msgstr "{} resultados · clique em um para ver o arquivo"
+
+msgid "{} s"
+msgstr "{} s"
+
+msgid "{} · {} of {} repositories"
+msgstr "{} · {} de {} repositórios"
+
+msgid "{}: {} calls, {} errors"
+msgstr "{}: {} chamadas, {} erros"
+
+msgid "the server took too long to answer"
+msgstr "o servidor demorou demais para responder"
+
+msgid "The server took too long to answer: try again"
+msgstr "O servidor demorou demais para responder: tente de novo"
+
+msgid "The server is not answering (busy or restarting): data from {}"
+msgstr "O servidor não está respondendo (ocupado ou reiniciando): dados de {}"
