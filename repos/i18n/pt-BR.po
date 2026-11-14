@@ -1,0 +1,331 @@
+# Brazilian Portuguese translation of the Repositories app.
+# The hub uses it for view.slint and manifest.toml; the executable embeds it for the texts
+# it builds (src/i18n.rs). The test i18n::tests::catalog_covers_every_string checks that
+# every text has an entry here and that no entry is unused.
+msgid ""
+msgstr ""
+"Language: pt_BR\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+# manifest.toml
+
+msgid "Repositories"
+msgstr "Repositórios"
+
+msgid "Your Git repositories and what is left to commit and push, with one-click push and pull, the AI agent working in each one and the GitHub CI. The mascot nags about old pending work and celebrates when everything is pushed. Works on Linux and Windows (needs git; the CI needs gh)."
+msgstr "Seus repositórios Git e o que falta commitar e enviar, com enviar e puxar num clique, o agente de IA trabalhando em cada um e o CI do GitHub. A mascote cobra pendência velha e comemora quando tudo foi enviado. Funciona no Linux e no Windows (precisa do git; o CI, do gh)."
+
+msgid "Hours until the mascot nags about pending work"
+msgstr "Horas até a mascote cobrar pendências"
+
+msgid "Search depth in the folders"
+msgstr "Profundidade da busca nas pastas"
+
+msgid "Show only repositories with pending work"
+msgstr "Mostrar só repositórios com pendências"
+
+msgid "Fetch from the remote every 30 min (git fetch)"
+msgstr "Buscar no remoto a cada 30 min (git fetch)"
+
+msgid "Show GitHub CI and PRs (needs gh logged in)"
+msgstr "Mostrar CI e PRs do GitHub (precisa do gh com login)"
+
+msgid "Remind me at the end of the day about unpushed commits"
+msgstr "Lembrar no fim do dia dos commits sem enviar"
+
+msgid "Reminder time"
+msgstr "Hora do lembrete"
+
+# view.slint
+
+msgid "starting…"
+msgstr "iniciando…"
+
+msgid "+ Folder"
+msgstr "+ Pasta"
+
+msgid "Folders"
+msgstr "Pastas"
+
+msgid "Refresh"
+msgstr "Atualizar"
+
+msgid "pinned"
+msgstr "fixo"
+
+msgid "Latest commits"
+msgstr "Últimos commits"
+
+msgid "Unpin"
+msgstr "Desafixar"
+
+msgid "Pin to top"
+msgstr "Fixar no topo"
+
+msgid "Show"
+msgstr "Mostrar"
+
+msgid "Hide"
+msgstr "Ocultar"
+
+msgid "Confirm: delete"
+msgstr "Confirmar: apagar"
+
+msgid "Delete merged branches"
+msgstr "Apagar branches mergeadas"
+
+msgid "Push"
+msgstr "Enviar"
+
+msgid "Pull"
+msgstr "Puxar"
+
+msgid "Folder"
+msgstr "Pasta"
+
+msgid "1 hidden"
+msgstr "1 oculto"
+
+msgid "{} hidden"
+msgstr "{} ocultos"
+
+msgid "hide"
+msgstr "esconder"
+
+msgid "show"
+msgstr "mostrar"
+
+# src/main.rs
+
+msgid "pushing…"
+msgstr "enviando…"
+
+msgid "pulling…"
+msgstr "puxando…"
+
+msgid "deleting branches…"
+msgstr "apagando branches…"
+
+msgid "{}: could not push: {}"
+msgstr "{}: não deu para enviar: {}"
+
+msgid "{}: could not pull: {}"
+msgstr "{}: não deu para puxar: {}"
+
+msgid "{}: could not delete the branches: {}"
+msgstr "{}: não deu para apagar as branches: {}"
+
+msgid "could not save the folder: {}"
+msgstr "não consegui gravar a pasta: {}"
+
+msgid "could not pick the folder: {}"
+msgstr "não deu para escolher a pasta: {}"
+
+msgid "git is not installed (or not on the PATH)"
+msgstr "o git não está instalado (ou não está no PATH)"
+
+msgid "looking for repositories…"
+msgstr "procurando repositórios…"
+
+msgid "no terminal found (set $TERMINAL)"
+msgstr "nenhum terminal encontrado (defina $TERMINAL)"
+
+msgid "Folder with Git repositories"
+msgstr "Pasta com repositórios Git"
+
+msgid "no folder picker found (install zenity or kdialog)"
+msgstr "nenhum seletor de pasta (instale o zenity ou o kdialog)"
+
+msgid "could not open: {}"
+msgstr "não deu para abrir: {}"
+
+msgid "None of the watched folders exists. Click + Folder to pick one."
+msgstr "Nenhuma pasta vigiada existe. Clique em + Pasta para escolher uma."
+
+msgid "No repositories in {}. Click + Folder to pick another one."
+msgstr "Nenhum repositório em {}. Clique em + Pasta para escolher outra."
+
+msgid "reading {} repositories…"
+msgstr "lendo {} repositórios…"
+
+msgid "+1 clean repository"
+msgstr "+1 repositório limpo"
+
+msgid "+{} clean repositories"
+msgstr "+{} repositórios limpos"
+
+# subject of the mascots' chatter: "help! {s} is in the red!"
+msgid "{}'s CI"
+msgstr "o CI de {}"
+
+# subject of the mascots' chatter: "{s} is back to normal!"
+msgid "repositories"
+msgstr "repositórios"
+
+# src/state.rs
+
+msgid "now"
+msgstr "agora"
+
+msgid "{} ago"
+msgstr "há {}"
+
+msgid "error"
+msgstr "erro"
+
+msgid "1 conflicted"
+msgstr "1 em conflito"
+
+msgid "{} conflicted"
+msgstr "{} em conflito"
+
+msgid "1 staged"
+msgstr "1 preparado"
+
+msgid "{} staged"
+msgstr "{} preparados"
+
+msgid "1 modified"
+msgstr "1 alterado"
+
+msgid "{} modified"
+msgstr "{} alterados"
+
+msgid "1 new"
+msgstr "1 novo"
+
+msgid "{} new"
+msgstr "{} novos"
+
+msgid "detached HEAD"
+msgstr "HEAD solto"
+
+msgid "branch without upstream"
+msgstr "branch sem upstream"
+
+msgid "local only"
+msgstr "só local"
+
+msgid "1 stashed"
+msgstr "1 no stash"
+
+msgid "{} stashed"
+msgstr "{} no stash"
+
+msgid "CI on {} failed"
+msgstr "CI de {} falhou"
+
+msgid "1 PR awaits your review"
+msgstr "1 PR espera sua revisão"
+
+msgid "{} PRs await your review"
+msgstr "{} PRs esperam sua revisão"
+
+msgid "{} finished · not committed"
+msgstr "{} terminou · sem commit"
+
+msgid "(detached)"
+msgstr "(solto)"
+
+msgid "clean"
+msgstr "limpo"
+
+msgid "no repositories in the watched folders"
+msgstr "nenhum repositório nas pastas vigiadas"
+
+msgid "1 repository"
+msgstr "1 repositório"
+
+msgid "{} repositories"
+msgstr "{} repositórios"
+
+msgid "all committed and pushed"
+msgstr "tudo commitado e enviado"
+
+msgid "{} with pending work"
+msgstr "{} com pendências"
+
+msgid "{} and {} more"
+msgstr "{} e mais {}"
+
+msgid "conflicted: {}"
+msgstr "em conflito: {}"
+
+msgid "broken CI: {}"
+msgstr "CI quebrado: {}"
+
+msgid "{} with pending work: {}"
+msgstr "{} com pendências: {}"
+
+# src/git.rs
+
+msgid "{} is not installed"
+msgstr "o {} não está instalado"
+
+msgid "{} did not answer within {} s"
+msgstr "{} não respondeu em {} s"
+
+msgid "{} exited with {}"
+msgstr "{} saiu com {}"
+
+msgid "rebase in progress"
+msgstr "rebase em andamento"
+
+msgid "merge in progress"
+msgstr "merge em andamento"
+
+msgid "cherry-pick in progress"
+msgstr "cherry-pick em andamento"
+
+msgid "revert in progress"
+msgstr "revert em andamento"
+
+msgid "bisect in progress"
+msgstr "bisect em andamento"
+
+# src/agents.rs
+
+msgid "{} working"
+msgstr "{} trabalhando"
+
+msgid "{} is waiting for you"
+msgstr "{} espera você"
+
+# src/detail.rs
+
+msgid "+1 file"
+msgstr "+1 arquivo"
+
+msgid "+{} files"
+msgstr "+{} arquivos"
+
+msgid "1 branch already merged into {}: {}"
+msgstr "1 branch já mergeada em {}: {}"
+
+msgid "{} branches already merged into {}: {}"
+msgstr "{} branches já mergeadas em {}: {}"
+
+# src/reminder.rs
+
+msgid "You have 1 unpushed commit in 1 repository."
+msgstr "Você tem 1 commit sem enviar em 1 repositório."
+
+msgid "You have {} unpushed commits in 1 repository."
+msgstr "Você tem {} commits sem enviar em 1 repositório."
+
+msgid "You have {} unpushed commits in {} repositories."
+msgstr "Você tem {} commits sem enviar em {} repositórios."
+
+msgid "And 1 repository with uncommitted changes."
+msgstr "E 1 repositório com alterações sem commit."
+
+msgid "And {} repositories with uncommitted changes."
+msgstr "E {} repositórios com alterações sem commit."
+
+# src/roots.rs (header of the folders file the app creates)
+
+msgid "Folders where the app looks for Git repositories, one per line."
+msgstr "Pastas onde o app procura repositórios Git, uma por linha."
+
+msgid "~ is your home folder. Save and click Refresh in the app."
+msgstr "~ é a sua pasta pessoal. Salve e clique em atualizar no app."

@@ -1,18 +1,18 @@
-//! Acha os repositórios dentro das pastas vigiadas.
+//! Finds the repositories inside the watched folders.
 
 use std::path::{Path, PathBuf};
 
-/// Pastas que nunca têm repositório do usuário e podem ser enormes.
+/// Folders that never hold a user's repository and can be huge.
 const SKIP: &[&str] = &["node_modules", "target", "vendor", "dist", "build", "__pycache__", "venv"];
 
-/// É um repositório (tem `.git`, pasta ou arquivo de worktree/submódulo)?
+/// Is it a repository (has a `.git`, folder or worktree/submodule file)?
 pub fn is_repo(dir: &Path) -> bool {
     std::fs::symlink_metadata(dir.join(".git")).is_ok()
 }
 
-/// Os repositórios em `roots`, descendo até `depth` níveis. Não entra num repositório
-/// (submódulos e pastas internas ficam com o de cima), nem em pasta oculta, link ou
-/// pasta de dependências. Em ordem, sem repetidos.
+/// The repositories in `roots`, going down up to `depth` levels. Does not go into a
+/// repository (submodules and inner folders belong to the outer one), nor into hidden
+/// folders, links or dependency folders. Sorted, without duplicates.
 pub fn find_repos(roots: &[PathBuf], depth: u32) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for root in roots {
@@ -46,10 +46,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn acha_repositorios_ate_a_profundidade() {
-        let root = std::env::temp_dir().join(format!("repos-acha-{}", std::process::id()));
+    fn finds_repositories_down_to_the_depth() {
+        let root = std::env::temp_dir().join(format!("repos-find-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        for d in ["a/.git", "a/sub/.git", "grupo/b/.git", "grupo/fundo/c/.git", ".oculto/d/.git", "node_modules/e/.git", "solta"] {
+        for d in ["a/.git", "a/sub/.git", "group/b/.git", "group/deep/c/.git", ".hidden/d/.git", "node_modules/e/.git", "loose"] {
             std::fs::create_dir_all(root.join(d)).unwrap();
         }
         std::fs::create_dir_all(root.join("wt")).unwrap();
@@ -57,9 +57,9 @@ mod tests {
         let rel = |v: Vec<PathBuf>| -> Vec<String> {
             v.iter().map(|p| p.strip_prefix(&root).unwrap().display().to_string().replace('\\', "/")).collect()
         };
-        assert_eq!(rel(find_repos(std::slice::from_ref(&root), 2)), ["a", "grupo/b", "wt"]);
-        assert_eq!(rel(find_repos(std::slice::from_ref(&root), 3)), ["a", "grupo/b", "grupo/fundo/c", "wt"]);
-        // a própria pasta vigiada pode ser um repositório
+        assert_eq!(rel(find_repos(std::slice::from_ref(&root), 2)), ["a", "group/b", "wt"]);
+        assert_eq!(rel(find_repos(std::slice::from_ref(&root), 3)), ["a", "group/b", "group/deep/c", "wt"]);
+        // the watched folder itself can be a repository
         assert_eq!(find_repos(&[root.join("a")], 2), [root.join("a")]);
         let _ = std::fs::remove_dir_all(&root);
     }
