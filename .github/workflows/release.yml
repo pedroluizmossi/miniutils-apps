@@ -1,12 +1,16 @@
-# Release de um app: a tag `<app>-v<versão>` (ex.: `repos-v0.1.0`) roda os testes, compila
-# o app para Linux (estático, musl: roda em qualquer distro) e Windows, e publica um Release
-# com os executáveis, as somas SHA-256 e a entrada pronta para o registry.json da loja
-# (nas notas e no arquivo `registry-entry.json`).
+# Release of an app: the tag `<app>-v<version>` (e.g. `repos-v0.1.0`) runs the tests, builds
+# the app for Linux (static, musl: runs on any distro) and Windows, and publishes a Release
+# with the executables, the SHA-256 sums and the entry ready for the store's registry.json
+# (in the notes and in the file `registry-entry.json`).
+#
+# The executables are the only release assets: the store installs the rest of the app
+# folder (manifest.toml, view.slint, i18n/*.po, …) from the commit the entry pins, and the
+# executable embeds i18n/pt-BR.po for its own texts.
 #
 #   git tag repos-v0.1.0 && git push origin repos-v0.1.0
 #
-# A versão da tag tem de bater com a `version` do Cargo.toml do app. Rodar à mão (aba
-# Actions › Release › Run workflow) só compila, como artefatos da execução, sem publicar.
+# The tag's version must match the `version` in the app's Cargo.toml. Running it by hand
+# (Actions tab › Release › Run workflow) only builds, as run artifacts, without publishing.
 name: Release
 
 on:
@@ -15,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: "Pasta do app (ex.: repos)"
+        description: "App folder (e.g. repos)"
         required: true
         default: repos
 
@@ -27,7 +31,7 @@ env:
 
 jobs:
   build:
-    name: Executável ${{ matrix.os_name }}
+    name: Executable ${{ matrix.os_name }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -51,7 +55,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
 
-      - name: App e versão
+      - name: App and version
         id: app
         env:
           INPUT_APP: ${{ inputs.app }}
@@ -63,14 +67,14 @@ jobs:
             app="$INPUT_APP"
           fi
           if [[ ! -f "$app/manifest.toml" ]]; then
-            echo "::error::não há app em $app/ (falta $app/manifest.toml)"
+            echo "::error::no app in $app/ (missing $app/manifest.toml)"
             exit 1
           fi
-          # `cargo pkgid` devolve "…#repos@0.1.0" (ou "…#0.1.0"): fica o que vem depois
+          # `cargo pkgid` gives "…#repos@0.1.0" (or "…#0.1.0"): keep what comes after
           id=$(cargo pkgid -p "$app" --locked)
           version="${id##*[#@]}"
           if [[ -n "${tag_version:-}" && "$tag_version" != "$version" ]]; then
-            echo "::error::a tag $GITHUB_REF_NAME não bate com a versão $version de $app/Cargo.toml"
+            echo "::error::the tag $GITHUB_REF_NAME does not match version $version of $app/Cargo.toml"
             exit 1
           fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
@@ -79,23 +83,23 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Testes
+      - name: Tests
         run: cargo test --workspace --locked
 
-      - name: Compilar (release)
+      - name: Build (release)
         env:
           APP: ${{ steps.app.outputs.app }}
           TARGET: ${{ matrix.target }}
         run: cargo build --release --locked -p "$APP" --target "$TARGET"
 
-      - name: Empacotar
+      - name: Package
         env:
           APP: ${{ steps.app.outputs.app }}
           TARGET: ${{ matrix.target }}
           OS_NAME: ${{ matrix.os_name }}
           EXT: ${{ matrix.ext }}
         run: |
-          # o nome que tools/index_entry.py espera
+          # the name tools/index_entry.py expects
           asset="$APP-$OS_NAME-x86_64$EXT"
           mkdir -p dist
           cp "target/$TARGET/release/$APP$EXT" "dist/$asset"
@@ -110,9 +114,9 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publicar o Release
+    name: Publish the Release
     needs: build
-    # só numa tag; rodando à mão os executáveis ficam como artefatos
+    # only on a tag; when run by hand the executables stay as artifacts
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -123,7 +127,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Entrada do índice e Release
+      - name: Index entry and Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -134,10 +138,10 @@ jobs:
           python3 tools/index_entry.py --app "$app" --tag "$TAG" --commit "$GITHUB_SHA" \
             --repo "https://github.com/$GITHUB_REPOSITORY" --dist dist > registry-entry.json
           {
-            echo "Executáveis de **$app $version** para Linux (estático) e Windows."
+            echo "Executables of **$app $version** for Linux (static) and Windows."
             echo
-            echo "Para publicar na loja: acrescente a entrada abaixo à lista \`plugins\` do"
-            echo "\`registry.json\` e assine o índice de novo (\`miniutils --loja-assinar\`)."
+            echo "To publish it in the store: add the entry below to the \`plugins\` list of"
+            echo "\`registry.json\` and sign the index again (\`miniutils --store-sign\`)."
             echo
             echo '```json'
             cat registry-entry.json

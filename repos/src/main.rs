@@ -1,36 +1,39 @@
-//! Repositórios Git: app externo do MiniUtils.
+//! Git repositories: a MiniUtils external app.
 //!
-//! Acha os repositórios nas pastas vigiadas (`pastas.txt`, na pasta de dados do app) e
-//! mostra, para cada um, o que falta commitar e enviar. A mascote fica inquieta com
-//! pendência velha (opção "Horas até a mascote cobrar pendências"), em alarme com conflito,
-//! merge/rebase pela metade ou CI da branch principal quebrado, e contente com tudo enviado.
+//! Finds the repositories in the watched folders (`roots.txt`, in the app's data folder)
+//! and shows, for each one, what is left to commit and push. The mascot gets restless
+//! over old pending work (setting "Hours until the mascot nags about pending work"),
+//! alarmed by a conflict, a half-done merge/rebase or a broken CI on the main branch, and
+//! happy when everything is pushed.
 //!
-//! Além do git:
-//! - **agentes** (provedor `agents` do hub): a linha mostra o Claude, o Codex ou o OpenCode
-//!   trabalhando no repositório; pendência de quem tem agente ativo não conta como velha, e
-//!   o agente que termina deixando alteração sem commit é cobrado (`agents.rs`);
-//! - **GitHub** (pelo `gh`, se instalado e autenticado): CI da branch e PRs que pedem a
-//!   sua revisão, a cada 30 min (`gh.rs`);
-//! - **ações**: enviar (push) e puxar (pull só avançando) com um clique, apagar as branches
-//!   já mergeadas, fixar e ocultar repositórios (`prefs.rs`), escolher pastas;
-//! - **detalhe** ao clicar na linha: arquivos, últimos commits, stash (`detail.rs`);
-//! - **lembrete** no fim do dia do que não foi enviado (`reminder.rs`).
+//! Besides git:
+//! - **agents** (the hub's `agents` provider): the row shows Claude, Codex or OpenCode
+//!   working in the repository; pending work of a repository with an active agent does not
+//!   count as old, and an agent that finishes leaving uncommitted changes gets nagged
+//!   (`agents.rs`);
+//! - **GitHub** (through `gh`, if installed and logged in): the branch's CI and the PRs
+//!   that request your review, every 30 min (`gh.rs`);
+//! - **actions**: push and pull (fast-forward only) in one click, delete the branches
+//!   already merged, pin and hide repositories (`prefs.rs`), pick folders;
+//! - **detail** when the row is clicked: files, latest commits, stash (`detail.rs`);
+//! - end-of-day **reminder** of what was not pushed (`reminder.rs`).
 //!
-//! Quando relê:
-//! - na hora, quando algo muda dentro de um `.git` (commit, add, checkout, pull, fetch);
-//! - todos, a cada 2 minutos e quando a janela do hub abre (editar arquivo não mexe no
-//!   `.git`, então é assim que aparece);
-//! - as pastas (repositório novo), a cada 20 minutos e no botão de atualizar.
+//! When it rereads:
+//! - right away, when something changes inside a `.git` (commit, add, checkout, pull, fetch);
+//! - all of them, every 2 minutes and when the hub window opens (editing a file does not
+//!   touch `.git`, so that is how it shows up);
+//! - the folders (new repository), every 20 minutes and on the refresh button.
 //!
-//! Threads: a principal só atende mensagens; o `git` roda numa thread de leitura, e o
-//! `fetch`, o `gh`, as ações e o seletor de pasta em threads próprias. Tudo volta pelo mesmo
-//! canal (`Msg`).
+//! Threads: the main one only handles messages; `git` runs on a reader thread, and
+//! `fetch`, `gh`, the actions and the folder picker on threads of their own. Everything
+//! comes back through the same channel (`Msg`).
 
 mod agents;
 mod detail;
 mod discover;
 mod gh;
 mod git;
+mod i18n;
 mod prefs;
 mod reminder;
 mod roots;
@@ -51,54 +54,55 @@ use serde_json::{Value, json};
 use agents::Seen;
 use detail::Detail;
 use gh::{Ci, GhInfo};
+use i18n::{fmt, tr};
 use prefs::Prefs;
 use state::{Extra, Flags, Overview, RepoInfo, State};
 
-/// Releitura completa: a cada N ticks (o `every` do manifesto é 30 s).
+/// Full reread: every N ticks (the manifest's `every` is 30 s).
 const FULL_SCAN_TICKS: u64 = 4;
-/// Nova busca de repositórios nas pastas, a cada N ticks.
+/// New search for repositories in the folders, every N ticks.
 const DISCOVER_TICKS: u64 = 40;
-/// Intervalo do `git fetch`, quando ligado.
+/// Interval of `git fetch`, when enabled.
 const FETCH_EVERY: Duration = Duration::from_secs(30 * 60);
-/// Intervalo das consultas ao GitHub (cota da API).
+/// Interval of the GitHub queries (API quota).
 const GH_EVERY: Duration = Duration::from_secs(30 * 60);
-/// Depois de um push, quando olhar o CI daquele repositório (o CI leva um tempo para começar).
+/// After a push, when to look at that repository's CI (CI takes a while to start).
 const GH_AFTER_PUSH: Duration = Duration::from_secs(60);
-/// Espera depois da última mudança no `.git` antes de reler (um commit mexe em vários
-/// arquivos seguidos).
+/// Wait after the last change in `.git` before rereading (a commit touches several files
+/// in a row).
 const DEBOUNCE: Duration = Duration::from_millis(800);
-/// "shown" seguidos não releem tudo de novo antes disto.
+/// Repeated "shown" messages do not reread everything again before this.
 const SHOWN_MIN: Duration = Duration::from_secs(10);
-/// Por quanto tempo a linha lembra que um agente terminou e deixou alteração sem commit.
+/// How long the row remembers that an agent finished and left uncommitted changes.
 const FINISHED_FOR: Duration = Duration::from_secs(30 * 60);
 
-/// Tudo o que acorda a thread principal.
+/// Everything that wakes the main thread.
 enum Msg {
     Host(HostMsg),
-    /// Mudou algo dentro de um `.git`.
+    /// Something changed inside a `.git`.
     Changed(PathBuf),
     Discovered(Vec<PathBuf>),
     Scanned(Vec<RepoInfo>),
     Fetched,
-    /// O que o GitHub disse. `None`: sem `gh` ou sem login. `partial`: só de alguns
-    /// repositórios (junta com o que já havia, em vez de trocar tudo).
+    /// What GitHub said. `None`: no `gh` or not logged in. `partial`: only some
+    /// repositories (merged with what was there, instead of replacing everything).
     Gh { result: Option<HashMap<PathBuf, GhInfo>>, partial: bool },
     Detail(PathBuf, Detail),
-    /// Terminou uma ação pedida pela tela.
+    /// An action requested by the view finished.
     Done { repo: PathBuf, verb: Verb, result: Result<(), String> },
-    /// A pasta escolhida no seletor (`None`: cancelou).
+    /// The folder chosen in the picker (`None`: cancelled).
     Picked(Result<Option<PathBuf>, String>),
 }
 
-/// Pedidos à thread de leitura.
+/// Requests to the reader thread.
 enum Job {
     Discover(Vec<PathBuf>, u32),
     Scan(Vec<PathBuf>),
-    /// Detalhe de um repositório: a branch atual e a principal.
+    /// Detail of a repository: the current branch and the main one.
     Detail(PathBuf, String, Option<String>),
 }
 
-/// Ações da tela que rodam o git em segundo plano.
+/// View actions that run git in the background.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verb {
     Push,
@@ -107,21 +111,21 @@ enum Verb {
 }
 
 impl Verb {
-    /// O que a linha mostra enquanto roda.
+    /// What the row shows while it runs.
     fn busy(self) -> &'static str {
         match self {
-            Verb::Push => "enviando…",
-            Verb::Pull => "puxando…",
-            Verb::Prune => "apagando branches…",
+            Verb::Push => tr("pushing…"),
+            Verb::Pull => tr("pulling…"),
+            Verb::Prune => tr("deleting branches…"),
         }
     }
 
-    /// "não deu para <isto>".
-    fn failed(self) -> &'static str {
+    /// The notification when it fails in repository `name`.
+    fn failed(self, name: &str, err: &str) -> String {
         match self {
-            Verb::Push => "enviar",
-            Verb::Pull => "puxar",
-            Verb::Prune => "apagar as branches",
+            Verb::Push => fmt("{}: could not push: {}", &[&name, &err]),
+            Verb::Pull => fmt("{}: could not pull: {}", &[&name, &err]),
+            Verb::Prune => fmt("{}: could not delete the branches: {}", &[&name, &err]),
         }
     }
 }
@@ -151,8 +155,8 @@ impl Settings {
     }
 }
 
-/// A thread de leitura: junta os pedidos que se acumularam (vários repositórios mudando
-/// juntos viram uma leitura só) e manda o resultado de volta.
+/// The reader thread: merges the requests that piled up (several repositories changing
+/// together become a single read) and sends the result back.
 fn reader(jobs: Receiver<Job>, tx: Sender<Msg>) {
     while let Ok(first) = jobs.recv() {
         let mut discover = None;
@@ -187,7 +191,7 @@ fn reader(jobs: Receiver<Job>, tx: Sender<Msg>) {
     }
 }
 
-/// Lê um repositório: status, operação pela metade e a idade das pendências.
+/// Reads a repository: status, half-done operation and the age of the pending work.
 fn read_repo(path: &Path) -> RepoInfo {
     let gd = git::git_dir(path);
     let status = git::status(path);
@@ -211,7 +215,7 @@ fn read_repo(path: &Path) -> RepoInfo {
     }
 }
 
-/// Nome de cada repositório na lista: o da pasta; com nomes repetidos, "pai/nome".
+/// Name of each repository in the list: the folder's; with repeated names, "parent/name".
 fn names(repos: &[PathBuf]) -> HashMap<PathBuf, String> {
     let base = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string());
     repos
@@ -228,7 +232,7 @@ fn names(repos: &[PathBuf]) -> HashMap<PathBuf, String> {
         .collect()
 }
 
-/// Editor que abre uma pasta (`code .`), se houver.
+/// Editor that opens a folder (`code .`), if any.
 fn find_editor() -> Option<(String, PathBuf)> {
     [("VS Code", "code"), ("VSCodium", "codium"), ("Zed", "zed")]
         .into_iter()
@@ -246,38 +250,38 @@ struct App {
     git_dirs: Vec<(PathBuf, PathBuf)>,
     names: HashMap<PathBuf, String>,
     infos: HashMap<PathBuf, RepoInfo>,
-    /// Situação de cada um na última tela (para os fatos da conversa).
+    /// State of each one on the last render (for the chatter facts).
     states: HashMap<PathBuf, State>,
     had_pending: bool,
-    /// Repositórios com mudança no `.git` esperando o fim do debounce.
+    /// Repositories with a change in `.git` waiting for the debounce to end.
     changed: HashMap<PathBuf, Instant>,
     ticks: u64,
     last_full: Option<Instant>,
     last_fetch: Option<Instant>,
     fetching: Arc<AtomicBool>,
     editor: Option<(String, PathBuf)>,
-    /// Última leitura do provedor `agents` (para refazer o mapa quando a lista muda).
+    /// Last reading of the `agents` provider (to rebuild the map when the list changes).
     agents_data: Option<Value>,
     agents: HashMap<PathBuf, Seen>,
-    /// Agente que acabou de terminar, esperando a releitura para ver se deixou alteração.
+    /// Agent that just finished, waiting for the reread to see whether it left changes.
     finishing: HashMap<PathBuf, String>,
-    /// Agente que terminou deixando alteração sem commit, e quando.
+    /// Agent that finished leaving uncommitted changes, and when.
     finished: HashMap<PathBuf, (String, Instant)>,
     gh: HashMap<PathBuf, GhInfo>,
-    /// Sem `gh` ou sem login: não tenta de novo até mudar a opção.
+    /// No `gh` or not logged in: do not try again until the setting changes.
     gh_off: bool,
     gh_busy: Arc<AtomicBool>,
     last_gh: Option<Instant>,
-    /// Repositórios para olhar o CI depois de um push.
+    /// Repositories whose CI to check after a push.
     gh_soon: Vec<(PathBuf, Instant)>,
-    /// Ação em curso em cada repositório.
+    /// Action running in each repository.
     busy: HashMap<PathBuf, Verb>,
-    /// Repositório aberto (detalhe) e o que se leu dele.
+    /// Open repository (detail) and what was read from it.
     open: Option<PathBuf>,
     detail: Option<(PathBuf, Detail)>,
     show_hidden: bool,
     picking: bool,
-    /// O que já foi para a tela (só manda o que mudou).
+    /// What was already sent to the view (only changes are sent).
     sent: HashMap<&'static str, Value>,
     last_overview: Option<Overview>,
 }
@@ -322,7 +326,7 @@ impl App {
         }
     }
 
-    /// Manda uma propriedade à tela se ela mudou.
+    /// Sends a property to the view if it changed.
     fn set(&mut self, prop: &'static str, value: Value) {
         if self.sent.get(prop) != Some(&value) {
             hub::set(prop, value.clone());
@@ -348,7 +352,7 @@ impl App {
         let _ = self.jobs.send(Job::Scan(vec![repo.to_path_buf()]));
     }
 
-    /// Pede o detalhe do repositório aberto.
+    /// Requests the detail of the open repository.
     fn request_detail(&self) {
         let Some(open) = &self.open else { return };
         let Some(Ok(st)) = self.infos.get(open).map(|i| &i.status) else { return };
@@ -356,7 +360,8 @@ impl App {
         let _ = self.jobs.send(Job::Detail(open.clone(), st.branch.clone(), base));
     }
 
-    /// `git fetch` em todos que têm remoto, numa thread (um de cada vez; não junta dois).
+    /// `git fetch` in every repository with a remote, on a thread (one at a time; never two
+    /// fetch rounds together).
     fn fetch_all(&mut self) {
         if self.fetching.swap(true, Ordering::SeqCst) {
             return;
@@ -367,7 +372,7 @@ impl App {
         std::thread::spawn(move || {
             for repo in list {
                 if let Err(e) = git::fetch(&repo) {
-                    eprintln!("fetch em {}: {e}", repo.display());
+                    eprintln!("fetch in {}: {e}", repo.display());
                 }
             }
             busy.store(false, Ordering::SeqCst);
@@ -375,7 +380,7 @@ impl App {
         });
     }
 
-    /// CI e PRs pelo `gh`, numa thread: de todos os repositórios do GitHub, ou só de `only`.
+    /// CI and PRs through `gh`, on a thread: for every GitHub repository, or only `only`.
     fn refresh_gh(&mut self, only: Option<&Path>) {
         if !self.settings.github || self.gh_off || self.gh_busy.swap(true, Ordering::SeqCst) {
             return;
@@ -407,7 +412,7 @@ impl App {
         });
     }
 
-    /// Roda uma ação do git num repositório, numa thread (uma por repositório de cada vez).
+    /// Runs a git action in a repository, on a thread (one per repository at a time).
     fn start(&mut self, repo: PathBuf, verb: Verb) {
         if self.busy.contains_key(&repo) {
             return;
@@ -432,9 +437,9 @@ impl App {
         self.render();
     }
 
-    /// Nova leitura dos agentes (ou a mesma, com outra lista de repositórios). Com
-    /// `detect`, o agente que parou de trabalhar vai para a releitura: se deixou
-    /// alteração sem commit, a mascote cobra.
+    /// New reading of the agents (or the same one, with another list of repositories).
+    /// With `detect`, an agent that stopped working goes to the reread: if it left
+    /// uncommitted changes, the mascot nags.
     fn update_agents(&mut self, detect: bool) {
         let Some(data) = &self.agents_data else { return };
         let now = agents::by_repo(data, &self.repos);
@@ -445,7 +450,7 @@ impl App {
                 self.finishing.insert(repo, tool);
             }
         }
-        // voltou a trabalhar: o "terminou" não vale mais
+        // back at work: the "finished" no longer applies
         self.finished.retain(|repo, _| !now.get(repo).is_some_and(|s| s.activity.active()));
         self.agents = now;
     }
@@ -491,7 +496,7 @@ impl App {
                 if open_read {
                     self.request_detail();
                 }
-                // primeira leitura completa: já dá para perguntar ao GitHub
+                // first full read: GitHub can be asked now
                 if self.last_gh.is_none() && self.repos.iter().all(|r| self.infos.contains_key(r)) {
                     self.refresh_gh(None);
                 }
@@ -501,7 +506,7 @@ impl App {
             Msg::Gh { result, partial } => {
                 match result {
                     None => {
-                        eprintln!("gh ausente ou sem login: sem CI nem PRs (gh auth login para ligar)");
+                        eprintln!("gh missing or not logged in: no CI or PRs (gh auth login to enable)");
                         self.gh_off = true;
                         self.gh.clear();
                     }
@@ -519,7 +524,7 @@ impl App {
             Msg::Done { repo, verb, result } => {
                 self.busy.remove(&repo);
                 match result {
-                    Err(e) => hub::notify("Repositórios", &format!("{}: não deu para {}: {e}", self.name(&repo), verb.failed())),
+                    Err(e) => hub::notify(tr("Repositories"), &verb.failed(&self.name(&repo), &e)),
                     Ok(()) if verb == Verb::Push => self.gh_soon.push((repo.clone(), Instant::now() + GH_AFTER_PUSH)),
                     Ok(()) => {}
                 }
@@ -529,11 +534,11 @@ impl App {
             Msg::Picked(result) => {
                 self.picking = false;
                 match (result, &self.data_dir) {
-                    (Ok(Some(pasta)), Some(dir)) => match roots::append(dir, &pasta) {
+                    (Ok(Some(folder)), Some(dir)) => match roots::append(dir, &folder) {
                         Ok(_) => self.discover(),
-                        Err(e) => hub::notify("Repositórios", &format!("não consegui gravar a pasta: {e}")),
+                        Err(e) => hub::notify(tr("Repositories"), &fmt("could not save the folder: {}", &[&e])),
                     },
-                    (Err(e), _) => hub::notify("Repositórios", &format!("não deu para escolher a pasta: {e}")),
+                    (Err(e), _) => hub::notify(tr("Repositories"), &fmt("could not pick the folder: {}", &[&e])),
                     _ => {}
                 }
             }
@@ -543,21 +548,24 @@ impl App {
     fn host(&mut self, msg: HostMsg) {
         match msg {
             HostMsg::Start(s) => {
+                i18n::init(&s.lang);
+                prefs::migrate(&s.data_dir);
+                roots::migrate(&s.data_dir);
                 self.prefs = Prefs::load(&s.data_dir);
                 self.data_dir = Some(s.data_dir);
                 self.settings = Settings::from(&s.settings);
                 if os::which("git").is_none() {
-                    hub::error("o git não está instalado (ou não está no PATH)");
+                    hub::error(tr("git is not installed (or not on the PATH)"));
                     return;
                 }
                 let tx = self.tx.clone();
                 self.watch = watch::Watch::new(move |p| {
                     let _ = tx.send(Msg::Changed(p));
                 })
-                .map_err(|e| eprintln!("sem vigia do .git ({e}): só a releitura periódica"))
+                .map_err(|e| eprintln!("no .git watcher ({e}): periodic rereads only"))
                 .ok();
                 self.set("editor", json!(self.editor.as_ref().map(|(l, _)| l.as_str()).unwrap_or_default()));
-                self.set("subtitle", json!("procurando repositórios…"));
+                self.set("subtitle", json!(tr("looking for repositories…")));
                 self.discover();
             }
             HostMsg::Tick => {
@@ -574,7 +582,7 @@ impl App {
                     self.refresh_gh(None);
                 }
                 self.remind();
-                // as idades andam e uma pendência pode ficar velha sem nada mudar
+                // ages move on, and pending work can become old without anything changing
                 self.render();
             }
             HostMsg::Shown => {
@@ -615,14 +623,17 @@ impl App {
     }
 
     fn action(&mut self, name: &str, arg: &str) {
-        // caminho só de repositório conhecido: a tela não abre pasta qualquer
+        // only paths of known repositories: the view cannot open just any folder
         let repo = self.repos.iter().find(|r| r.to_string_lossy() == arg).cloned();
         let (can_push, can_pull) = repo.as_ref().and_then(|r| self.infos.get(r)).map(|i| (i.can_push(), i.can_pull())).unwrap_or_default();
         let result = match (name, repo) {
-            ("terminal", Some(r)) => os::open_terminal(&r),
-            ("folder", Some(r)) => os::open_path(&r),
+            ("terminal", Some(r)) => os::open_terminal(&r).map_err(|e| match e.kind() {
+                std::io::ErrorKind::NotFound if cfg!(not(windows)) => tr("no terminal found (set $TERMINAL)").to_string(),
+                _ => e.to_string(),
+            }),
+            ("folder", Some(r)) => os::open_path(&r).map_err(|e| e.to_string()),
             ("editor", Some(r)) => match &self.editor {
-                Some((_, prog)) => os::spawn_detached(os::command(prog).arg(&r)),
+                Some((_, prog)) => os::spawn_detached(os::command(prog).arg(&r)).map_err(|e| e.to_string()),
                 None => Ok(()),
             },
             ("push", Some(r)) if can_push => {
@@ -667,7 +678,10 @@ impl App {
                     self.picking = true;
                     let tx = self.tx.clone();
                     std::thread::spawn(move || {
-                        let r = os::pick_folder("Pasta com repositórios Git").map_err(|e| e.to_string());
+                        let r = os::pick_folder(tr("Folder with Git repositories")).map_err(|e| match e.kind() {
+                            std::io::ErrorKind::NotFound if cfg!(not(windows)) => tr("no folder picker found (install zenity or kdialog)").to_string(),
+                            _ => e.to_string(),
+                        });
                         let _ = tx.send(Msg::Picked(r));
                     });
                 }
@@ -682,13 +696,13 @@ impl App {
                 Ok(())
             }
             ("roots", _) => match &self.data_dir {
-                Some(d) => os::open_path(&roots::ensure_file(d)),
+                Some(d) => os::open_path(&roots::ensure_file(d)).map_err(|e| e.to_string()),
                 None => Ok(()),
             },
             _ => Ok(()),
         };
         if let Err(e) = result {
-            hub::notify("Repositórios", &format!("não deu para abrir: {e}"));
+            hub::notify(tr("Repositories"), &fmt("could not open: {}", &[&e]));
         }
     }
 
@@ -699,7 +713,7 @@ impl App {
         self.render();
     }
 
-    /// O lembrete do fim do dia (uma vez por dia, a partir da hora da opção).
+    /// The end-of-day reminder (once a day, from the setting's hour on).
     fn remind(&mut self) {
         if !self.settings.reminder || self.infos.is_empty() {
             return;
@@ -713,7 +727,7 @@ impl App {
         let unpushed: Vec<u32> = visible.iter().map(|i| i.unpushed()).collect();
         let dirty = visible.iter().filter(|i| i.dirty()).count();
         if let Some(text) = reminder::text(&unpushed, dirty) {
-            hub::notify("Repositórios", &text);
+            hub::notify(tr("Repositories"), &text);
             self.prefs.reminded = Some(today);
             if let Some(dir) = &self.data_dir {
                 self.prefs.save(dir);
@@ -721,8 +735,8 @@ impl App {
         }
     }
 
-    /// Relê os repositórios cujo `.git` parou de mudar, e olha o CI dos que acabaram de
-    /// receber um push.
+    /// Rereads the repositories whose `.git` stopped changing, and checks the CI of those
+    /// that were just pushed.
     fn flush_changes(&mut self) {
         let ready: Vec<PathBuf> = self.changed.iter().filter(|(_, t)| t.elapsed() >= DEBOUNCE).map(|(p, _)| p.clone()).collect();
         if !ready.is_empty() {
@@ -743,23 +757,23 @@ impl App {
             let roots = self.data_dir.as_deref().map(roots::load).unwrap_or_default();
             let shown: Vec<String> = roots.iter().map(|r| r.display().to_string()).collect();
             let empty = if shown.is_empty() {
-                "Nenhuma pasta vigiada existe. Clique em + Pasta para escolher uma.".to_string()
+                tr("None of the watched folders exists. Click + Folder to pick one.").to_string()
             } else {
-                format!("Nenhum repositório em {}. Clique em + Pasta para escolher outra.", shown.join(", "))
+                fmt("No repositories in {}. Click + Folder to pick another one.", &[&shown.join(", ")])
             };
             self.set("empty", json!(empty));
             self.set("repos", json!([]));
         } else {
             self.set("empty", json!(""));
         }
-        // achou repositórios, mas ainda não leu: não mostra "tudo limpo" antes da hora
+        // found repositories but has not read them yet: do not show "all clean" too early
         if !self.repos.is_empty() && self.infos.is_empty() {
-            self.set("subtitle", json!(format!("lendo {} repositórios…", self.repos.len())));
+            self.set("subtitle", json!(fmt("reading {} repositories…", &[&self.repos.len()])));
             return;
         }
         let now = git::now();
         let stale = self.settings.stale_hours * 3600;
-        self.finished.retain(|repo, (_, at)| at.elapsed() < FINISHED_FOR && self_dirty(&self.infos, repo));
+        self.finished.retain(|repo, (_, at)| at.elapsed() < FINISHED_FOR && is_dirty(&self.infos, repo));
 
         struct Item<'a> {
             state: State,
@@ -787,7 +801,7 @@ impl App {
                 }
             })
             .collect();
-        // fixados primeiro; depois do mais urgente ao mais calmo
+        // pinned first; then from most urgent to calmest
         list.sort_by(|a, b| (!a.pinned, a.state, &a.name).cmp(&(!b.pinned, b.state, &b.name)));
         let hidden_count = list.iter().filter(|i| i.hidden).count();
         let clean_hidden = if self.settings.only_pending { list.iter().filter(|i| !i.hidden && i.state == State::Clean && !i.pinned).count() } else { 0 };
@@ -807,7 +821,7 @@ impl App {
                 state::row(i.info, &i.name, i.state, now, extra)
             })
             .collect();
-        // oculto não conta para a mascote, a conversa nem o resumo
+        // hidden ones do not count for the mascot, the chatter or the summary
         let states: Vec<(String, State)> = list.iter().filter(|i| !i.hidden).map(|i| (i.name.clone(), i.state)).collect();
         let new_states: HashMap<PathBuf, State> = list.iter().filter(|i| !i.hidden).map(|i| (i.info.path.clone(), i.state)).collect();
         let detail_props = match (&self.open, &self.detail) {
@@ -829,8 +843,8 @@ impl App {
         }
         let footer = match clean_hidden {
             0 => String::new(),
-            1 => "+1 repositório limpo".into(),
-            n => format!("+{n} repositórios limpos"),
+            1 => tr("+1 clean repository").to_string(),
+            n => fmt("+{} clean repositories", &[&n]),
         };
         self.set("footer", json!(footer));
         self.set("hidden-count", json!(hidden_count));
@@ -842,9 +856,9 @@ impl App {
         }
     }
 
-    /// Fatos para a conversa entre mascotes: pendência que ficou velha, conflito ou CI
-    /// quebrado novo e, quando tudo fica em dia, a recuperação. A primeira leitura não
-    /// conta (não é mudança).
+    /// Facts for the chatter between mascots: pending work that became old, a new conflict
+    /// or broken CI and, when everything is up to date again, the recovery. The first read
+    /// does not count (it is not a change).
     fn talk(&mut self, new: &HashMap<PathBuf, State>) {
         let first = self.states.is_empty();
         if !first {
@@ -853,8 +867,8 @@ impl App {
                 let name = self.name(path);
                 match state {
                     State::Conflict if before != Some(State::Conflict) => hub::fact(Fact::Trouble, &name, None),
-                    State::Broken if before != Some(State::Broken) => hub::fact(Fact::Trouble, &format!("o CI de {name}"), None),
-                    // sem número: as falas com "{v}%" não servem para horas
+                    State::Broken if before != Some(State::Broken) => hub::fact(Fact::Trouble, &fmt("{}'s CI", &[&name]), None),
+                    // no number: the lines with "{v}%" do not fit hours
                     State::Stale if before != Some(State::Stale) => hub::fact(Fact::Strain, &name, None),
                     _ => {}
                 }
@@ -862,15 +876,15 @@ impl App {
         }
         let pending = new.values().any(|s| s.pending());
         if !first && self.had_pending && !pending && !new.is_empty() {
-            hub::fact(Fact::Recovered, "repositórios", None);
+            hub::fact(Fact::Recovered, tr("repositories"), None);
         }
         self.had_pending = pending;
         self.states = new.clone();
     }
 }
 
-/// O repositório tem alteração sem commit, pela última leitura?
-fn self_dirty(infos: &HashMap<PathBuf, RepoInfo>, repo: &Path) -> bool {
+/// Does the repository have uncommitted changes, as of the last read?
+fn is_dirty(infos: &HashMap<PathBuf, RepoInfo>, repo: &Path) -> bool {
     infos.get(repo).is_some_and(RepoInfo::dirty)
 }
 
@@ -879,7 +893,7 @@ fn main() {
     hub::listen(tx.clone(), Msg::Host);
     let (jobs, job_rx) = channel::<Job>();
     let back = tx.clone();
-    std::thread::Builder::new().name("leitura".into()).spawn(move || reader(job_rx, back)).expect("thread de leitura");
+    std::thread::Builder::new().name("reader".into()).spawn(move || reader(job_rx, back)).expect("reader thread");
     let mut app = App::new(tx, jobs);
     loop {
         match rx.recv_timeout(Duration::from_millis(400)) {
@@ -896,7 +910,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opcoes_com_padroes_e_limites() {
+    fn settings_have_defaults_and_limits() {
         let s = Settings::from(&json!({"depth": 9, "stale_hours": 0, "only_pending": true, "reminder_hour": 40, "github": false}));
         assert_eq!(
             s,
@@ -909,11 +923,11 @@ mod tests {
     }
 
     #[test]
-    fn nomes_repetidos_levam_a_pasta_de_cima() {
-        let a = PathBuf::from("/p/trabalho/api");
-        let b = PathBuf::from("/p/pessoal/api");
+    fn repeated_names_get_the_parent_folder() {
+        let a = PathBuf::from("/p/work/api");
+        let b = PathBuf::from("/p/personal/api");
         let c = PathBuf::from("/p/site");
         let n = names(&[a.clone(), b.clone(), c.clone()]);
-        assert_eq!((n[&a].as_str(), n[&b].as_str(), n[&c].as_str()), ("trabalho/api", "pessoal/api", "site"));
+        assert_eq!((n[&a].as_str(), n[&b].as_str(), n[&c].as_str()), ("work/api", "personal/api", "site"));
     }
 }

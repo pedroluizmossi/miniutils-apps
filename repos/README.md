@@ -1,89 +1,96 @@
-# Repositórios (app externo do MiniUtils)
+# Repositories (MiniUtils external app)
 
-Os seus repositórios Git e o que falta em cada um: alterações não commitadas, commits não
-enviados (↑), commits do remoto que você ainda não tem (↓), stash e merge/rebase pela
-metade. Cada linha tem botões para abrir um terminal, a pasta ou o editor (VS Code,
-VSCodium ou Zed, se houver) no repositório.
+Your Git repositories and what is left in each one: uncommitted changes, unpushed commits
+(↑), commits on the remote you do not have yet (↓), stash and half-done merge/rebase. Each
+row has buttons to open a terminal, the folder or the editor (VS Code, VSCodium or Zed, if
+installed) in the repository.
 
-**Acesso total:** é um programa próprio, que roda com as permissões do seu usuário. Ele lê
-as pastas vigiadas e roda o `git` (e o `gh`, se houver) em cada repositório. Por conta
-própria, só escreve na pasta de dados dele (`pastas.txt` e `preferencias.json`). No
-repositório, só mexe quando você clica: enviar, puxar ou apagar branches.
+**Full access:** it is a program of its own, running with your user's permissions. It
+reads the watched folders and runs `git` (and `gh`, if installed) in each repository. On
+its own, it only writes to its data folder (`roots.txt` and `prefs.json`; older versions
+named them `pastas.txt` and `preferencias.json`, and the app renames them on start). In
+the repository, it only acts when you click: push, pull or delete branches.
 
-## Na linha de cada repositório
+The interface follows the hub's language (English or Brazilian Portuguese): the view and
+the manifest are translated by the hub from `i18n/pt-BR.po`, and the app uses the same file
+for the texts it builds.
 
-- **↑ Enviar** aparece com commits à frente do upstream: um `git push`.
-- **↓ Puxar** aparece quando o remoto tem commits novos e você não tem nada local (nem
-  alteração, nem commit à frente): um `git pull --ff-only`, que só avança a branch e nunca
-  cria merge. Sem chave ou senha disponível, falha sem perguntar, e o motivo vem numa
-  notificação.
-- **Agente de IA:** "Claude trabalhando", "Codex espera você". Vem do provedor `agents` do
-  hub (o mesmo do app Agentes de IA: Claude Code, Codex e OpenCode), pela pasta de cada
-  sessão. Enquanto um agente está ativo num repositório, as pendências dele não contam como
-  velhas. Quando o agente termina deixando alteração sem commit, a linha mostra
-  "terminou · sem commit" por até 30 min, e a mascote comenta na conversa.
-- **CI ✓ / ✗ / …:** a última execução do CI da branch atual, pelo `gh` (GitHub CLI), só em
-  repositório com remoto no github.com e só com o `gh` instalado e com login
-  (`gh auth login`). Também mostra "CI de main falhou" quando você está noutra branch, e
-  "2 PRs esperam sua revisão". É lido a cada 30 min (a API do GitHub tem cota) e 1 min
-  depois de um push pelo botão. Para desligar: opção "Mostrar CI e PRs do GitHub".
+## In each repository's row
 
-## Detalhe
+- **↑ Push** shows up with commits ahead of the upstream: a `git push`.
+- **↓ Pull** shows up when the remote has new commits and you have nothing local (no
+  changes, no commits ahead): a `git pull --ff-only`, which only moves the branch forward
+  and never creates a merge. Without a key or password available, it fails without asking,
+  and the reason comes in a notification.
+- **AI agent:** "Claude working", "Codex is waiting for you". Comes from the hub's
+  `agents` provider (the same as the AI Agents app: Claude Code, Codex and OpenCode), by
+  each session's folder. While an agent is active in a repository, its pending work does
+  not count as old. When the agent finishes leaving uncommitted changes, the row shows
+  "finished · not committed" for up to 30 min, and the mascot mentions it in the chatter.
+- **CI ✓ / ✗ / …:** the last CI run of the current branch, through `gh` (GitHub CLI), only
+  in repositories with a remote on github.com and only with `gh` installed and logged in
+  (`gh auth login`). It also shows "CI on main failed" when you are on another branch, and
+  "2 PRs await your review". Read every 30 min (the GitHub API has a quota) and 1 min after
+  a push from the button. To turn it off: setting "Show GitHub CI and PRs".
 
-Clique no nome do repositório para abrir: os arquivos alterados (`M` alterado, `A` novo,
-`D` apagado, `R` renomeado, `U` em conflito, `?` fora do git), os últimos 3 commits, o
-stash e as branches locais já mergeadas na principal. Ali ficam também:
+## Detail
 
-- **Fixar no topo:** o repositório aparece primeiro, mesmo limpo (e mesmo com "Mostrar só
-  repositórios com pendências").
-- **Ocultar:** some da lista, da mascote e do lembrete. No rodapé, "N ocultos · mostrar"
-  traz de volta.
-- **Apagar branches mergeadas:** pede um segundo clique e usa `git branch -d`, que recusa
-  apagar uma branch que não foi mergeada. Só as locais; a principal e a atual nunca entram.
+Click the repository's name to open it: the changed files (`M` modified, `A` added, `D`
+deleted, `R` renamed, `U` conflicted, `?` untracked), the last 3 commits, the stash and the
+local branches already merged into the main one. It also has:
 
-## A mascote (polvo)
+- **Pin to top:** the repository comes first, even when clean (and even with "Show only
+  repositories with pending work").
+- **Hide:** it leaves the list, the mascot and the reminder. In the footer, "N hidden ·
+  show" brings it back.
+- **Delete merged branches:** needs a second click and uses `git branch -d`, which refuses
+  to delete a branch that was not merged. Local ones only; the main and the current branch
+  never go.
 
-- **Alarme:** conflito, merge/rebase/cherry-pick pela metade, ou CI da branch principal
-  falhando.
-- **Agitada:** alguma pendência (não commitado ou não enviado) mais velha que o limite da
-  opção "Horas até a mascote cobrar pendências" (padrão: 24 h).
-- **Quieta:** pendências recentes; você (ou um agente) está trabalhando.
-- **Contente:** tudo commitado e enviado.
+## The mascot (octopus)
 
-Na conversa entre mascotes, o app conta quando um repositório fica com pendência velha, em
-conflito ou com o CI quebrado, quando um agente termina deixando alteração sem commit, e
-quando tudo volta a ficar em dia.
+- **Alarm:** a conflict, a half-done merge/rebase/cherry-pick, or the main branch's CI
+  failing.
+- **Restless:** some pending work (uncommitted or unpushed) older than the limit of the
+  setting "Hours until the mascot nags about pending work" (default: 24 h).
+- **Calm:** recent pending work; you (or an agent) are working.
+- **Happy:** everything committed and pushed.
 
-## Lembrete do fim do dia
+In the chatter between mascots, the app tells when a repository gets old pending work, a
+conflict or a broken CI, when an agent finishes leaving uncommitted changes, and when
+everything is up to date again.
 
-A partir da hora da opção "Hora do lembrete" (padrão: 18 h), uma notificação por dia se
-houver commit sem enviar: "Você tem 4 commits sem enviar em 2 repositórios". Repositório
-oculto não conta. Desliga na opção "Lembrar no fim do dia dos commits sem enviar".
+## End-of-day reminder
 
-## Pastas vigiadas
+From the hour of the setting "Reminder time" (default: 18 h), one notification a day if
+there are unpushed commits: "You have 4 unpushed commits in 2 repositories". Hidden
+repositories do not count. Turn it off with "Remind me at the end of the day about
+unpushed commits".
 
-Na primeira vez, o app cria `pastas.txt` na pasta de dados dele, com as pastas de projetos
-que achar na sua pasta pessoal (`~/Projetos`, `~/projects`, `~/src`, `~/code`…).
+## Watched folders
 
-- **+ Pasta** abre o seletor de pasta do sistema e acrescenta a escolhida (no Linux, precisa
-  do `zenity`, do `kdialog` ou do `yad`; no Windows, é o do próprio sistema).
-- **Pastas** abre o arquivo para editar à mão: uma pasta por linha, `~` é a pasta pessoal.
-  Salve e clique em **Atualizar**.
+The first time, the app creates `roots.txt` in its data folder, with the project folders it
+finds in your home folder (`~/Projetos`, `~/projects`, `~/src`, `~/code`…).
 
-A busca desce até a profundidade da opção "Profundidade da busca nas pastas" (padrão: 2) e
-não entra em pastas ocultas, `node_modules`, `target` e afins.
+- **+ Folder** opens the system folder picker and adds the chosen one (on Linux, it needs
+  `zenity`, `kdialog` or `yad`; on Windows, it is the system's own).
+- **Folders** opens the file to edit by hand: one folder per line, `~` is the home folder.
+  Save and click **Refresh**.
 
-## Quando atualiza
+The search goes down to the depth of the setting "Search depth in the folders" (default: 2)
+and does not go into hidden folders, `node_modules`, `target` and the like.
 
-- **Na hora:** commit, add, checkout, pull, fetch, ou qualquer coisa que mexa dentro do
-  `.git`. O app vigia só o `.git`, não a árvore de trabalho, para não gastar milhares de
-  vigias com `node_modules`.
-- **A cada 2 minutos, e quando a janela do hub abre:** todos (é assim que um arquivo
-  editado aparece).
-- **A cada 20 minutos, e no Atualizar:** procura repositórios novos nas pastas.
-- **A cada 30 minutos:** o CI e os PRs pelo `gh`; e, com a opção "Buscar no remoto" ligada,
-  `git fetch` em quem tem remoto, sem pedir senha (sem chave carregada, o fetch falha em
-  silêncio e vai para o registro do hub).
+## When it updates
 
-O app usa o próprio `git` (precisa estar no PATH), com `--no-optional-locks`: a leitura
-não mexe no repositório.
+- **Right away:** commit, add, checkout, pull, fetch, or anything that touches the inside
+  of `.git`. The app watches only `.git`, not the working tree, so it does not spend
+  thousands of watches on `node_modules`.
+- **Every 2 minutes, and when the hub window opens:** all of them (that is how an edited
+  file shows up).
+- **Every 20 minutes, and on Refresh:** looks for new repositories in the folders.
+- **Every 30 minutes:** CI and PRs through `gh`; and, with the setting "Fetch from the
+  remote" on, `git fetch` in those with a remote, without asking for a password (without a
+  loaded key, the fetch fails silently and goes to the hub's log).
+
+The app uses `git` itself (it must be on the PATH), with `--no-optional-locks`: reading does
+not touch the repository.

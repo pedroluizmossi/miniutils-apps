@@ -1,7 +1,7 @@
-// Tela do app Repositórios. O host preenche theme, mascot e mood; o resto vem do
-// executável (src/main.rs), com {"type":"set","prop":"…","value":…}.
-// Todo texto escala com theme.text-scale (Configurações › Aparência), e as alturas crescem
-// com ele em vez de cortar.
+// View of the Repositories app. The host fills theme, mascot and mood; the rest comes from
+// the executable (src/main.rs), with {"type":"set","prop":"…","value":…}.
+// All text scales with theme.text-scale (Settings › Appearance), and heights grow with it
+// instead of clipping. Visible text is English in @tr(…); the hub translates it with i18n/<lang>.po.
 import { ListView } from "std-widgets.slint";
 import { Theme } from "miniutils.slint";
 
@@ -9,27 +9,27 @@ export struct Repo {
     name: string,
     path: string,
     branch: string,
-    // "1 preparado · 2 alterados · 1 novo", ou "limpo"
+    // "1 staged · 2 modified · 1 new", or "clean"
     changes: string,
     ahead: int,
     behind: int,
-    // "há 5 h" (pendência mais velha), "agora" ou ""
+    // "5 h ago" (oldest pending work), "now" or ""
     age: string,
     // conflict, broken, stale, work, push, error, clean
     state: string,
-    // "rebase em andamento · 1 no stash · 2 PRs esperam sua revisão", ou a mensagem de erro
+    // "rebase in progress · 1 stashed · 2 PRs await your review", or the error message
     note: string,
-    // "Claude trabalhando", "Codex espera você", "Claude terminou · sem commit", ou ""
+    // "Claude working", "Codex is waiting for you", "Claude finished · not committed", or ""
     agent: string,
-    // working, waiting, finished, ou ""
+    // working, waiting, finished, or ""
     agent-state: string,
     can-push: bool,
     can-pull: bool,
-    // "enviando…", "puxando…", "apagando branches…", ou ""
+    // "pushing…", "pulling…", "deleting branches…", or ""
     busy: string,
-    // "CI ✓", "CI ✗", "CI …", ou ""
+    // "CI ✓", "CI ✗", "CI …", or ""
     ci: string,
-    // ok, fail, running, ou ""
+    // ok, fail, running, or ""
     ci-state: string,
     pinned: bool,
     hidden: bool,
@@ -38,7 +38,7 @@ export struct Repo {
 component Button inherits Rectangle {
     in property <Theme> theme;
     in property <string> label;
-    // destaque: a ação que a linha está pedindo (enviar, puxar)
+    // highlight: the action the row is asking for (push, pull)
     in property <bool> strong;
     callback clicked;
     width: max(34px, txt.preferred-width + 14px);
@@ -50,7 +50,7 @@ component Button inherits Rectangle {
     touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
-// Etiqueta pequena colorida (agente, CI, "fixo").
+// Small colored tag (agent, CI, "pinned").
 component Tag inherits Rectangle {
     in property <Theme> theme;
     in property <string> label;
@@ -63,8 +63,8 @@ component Tag inherits Rectangle {
     txt := Text { text: label; color: tint; font-size: 10px * theme.text-scale; vertical-alignment: center; }
 }
 
-// Área clicável que mede o que tem dentro (um Rectangle sozinho não passa a altura dos
-// filhos para o layout de fora).
+// Clickable area that measures its content (a lone Rectangle does not pass its children's
+// height to the outer layout).
 component Clickable inherits Rectangle {
     in property <Theme> theme;
     callback clicked;
@@ -79,7 +79,7 @@ component Clickable inherits Rectangle {
     touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
 }
 
-// Uma linha de texto do detalhe.
+// A text line of the detail.
 component Line inherits Text {
     in property <Theme> theme;
     color: theme.sub;
@@ -91,31 +91,31 @@ export component Main inherits Rectangle {
     in property <Theme> theme;
     in property <image> mascot;
     in property <string> mood;
-    in property <string> subtitle: "iniciando…";
+    in property <string> subtitle: @tr("starting…");
     in property <[Repo]> repos;
-    // texto no lugar da lista quando não há repositório
+    // text in place of the list when there is no repository
     in property <string> empty;
-    // "+5 repositórios limpos" (com a opção de mostrar só pendências)
+    // "+5 clean repositories" (with the option to show only pending work)
     in property <string> footer;
-    // repositórios ocultos, e se eles estão aparecendo
+    // hidden repositories, and whether they are being shown
     in property <int> hidden-count;
     in property <bool> show-hidden;
-    // nome do editor que abre a pasta ("VS Code"), ou "" se não houver
+    // name of the editor that opens the folder ("VS Code"), or "" if there is none
     in property <string> editor;
-    // caminho do repositório aberto (detalhe), ou ""
+    // path of the open repository (detail), or ""
     in property <string> open;
-    // o detalhe do repositório aberto
+    // the detail of the open repository
     in property <[string]> detail-files;
     in property <string> detail-more;
     in property <[string]> detail-commits;
     in property <[string]> detail-stash;
-    // "2 branches já mergeadas em main: a, b", ou ""
+    // "2 branches already merged into main: a, b", or ""
     in property <string> detail-merged;
     callback action(string, string);
 
     property <bool> short: self.height < 220px;
     property <bool> narrow: self.width < 440px;
-    // apagar branches pede um segundo clique: o caminho do repositório em confirmação
+    // deleting branches needs a second click: the path of the repository being confirmed
     property <string> confirm-prune;
 
     function color-of(state: string) -> color {
@@ -151,16 +151,16 @@ export component Main inherits Rectangle {
             VerticalLayout {
                 alignment: center;
                 horizontal-stretch: 1;
-                Text { text: "Repositórios"; color: theme.text; font-family: theme.font-title; font-size: (short ? 15px : 17px) * theme.text-scale; font-weight: 700; overflow: elide; }
+                Text { text: @tr("Repositories"); color: theme.text; font-family: theme.font-title; font-size: (short ? 15px : 17px) * theme.text-scale; font-weight: 700; overflow: elide; }
                 Text { text: subtitle; color: theme.sub; font-size: 12px * theme.text-scale; overflow: elide; }
             }
             VerticalLayout {
                 alignment: center;
                 HorizontalLayout {
                     spacing: 6px;
-                    Button { theme: theme; label: "+ Pasta"; clicked => { root.action("add_root", ""); } }
-                    if !narrow: Button { theme: theme; label: "Pastas"; clicked => { root.action("roots", ""); } }
-                    Button { theme: theme; label: "Atualizar"; clicked => { root.action("refresh", ""); } }
+                    Button { theme: theme; label: @tr("+ Folder"); clicked => { root.action("add_root", ""); } }
+                    if !narrow: Button { theme: theme; label: @tr("Folders"); clicked => { root.action("roots", ""); } }
+                    Button { theme: theme; label: @tr("Refresh"); clicked => { root.action("refresh", ""); } }
                 }
             }
         }
@@ -176,19 +176,19 @@ export component Main inherits Rectangle {
         if empty == "": ListView {
             vertical-stretch: 1;
             for r in repos: Rectangle {
-                // cresce com o tamanho do texto e com o detalhe aberto
+                // grows with the text size and with the detail open
                 height: max(46px, row.preferred-height + 8px);
                 opacity: r.hidden ? 0.55 : 1;
                 row := HorizontalLayout {
                     padding-right: 8px;
                     spacing: 8px;
-                    // faixa com a cor da situação
+                    // stripe with the color of the state
                     Rectangle { width: 3px; background: color-of(r.state); }
                     VerticalLayout {
                         horizontal-stretch: 1;
                         alignment: center;
                         spacing: 6px;
-                        // clicar no nome abre e fecha o detalhe
+                        // clicking the name opens and closes the detail
                         Clickable {
                             theme: theme;
                             clicked => { root.action("toggle", r.path); }
@@ -196,7 +196,7 @@ export component Main inherits Rectangle {
                                 spacing: 8px;
                                 Text { text: (r.path == open ? "▾ " : "▸ ") + r.name; color: theme.text; font-size: 14px * theme.text-scale; font-weight: 700; overflow: elide; }
                                 Text { text: r.branch; color: theme.sub; font-family: theme.font-mono; font-size: 11px * theme.text-scale; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
-                                if r.pinned: Tag { theme: theme; label: "fixo"; tint: theme.sub; }
+                                if r.pinned: Tag { theme: theme; label: @tr("pinned"); tint: theme.sub; }
                                 if r.agent != "" && !narrow: Tag { theme: theme; label: r.agent; tint: agent-color(r.agent-state); }
                                 if r.ci != "": Tag { theme: theme; label: r.ci; tint: ci-color(r.ci-state); }
                                 if r.ahead > 0: Text { text: "↑" + r.ahead; color: color-of(r.state); font-family: theme.font-mono; font-size: 12px * theme.text-scale; vertical-alignment: center; }
@@ -209,18 +209,18 @@ export component Main inherits Rectangle {
                                 font-size: 12px * theme.text-scale;
                                 overflow: elide;
                             }
-                            // sem espaço para a etiqueta, o agente vai numa linha só dele
+                            // without room for the tag, the agent goes on a line of its own
                             if r.agent != "" && narrow: Text { text: r.agent; color: agent-color(r.agent-state); font-size: 11px * theme.text-scale; overflow: elide; }
                         }
 
-                        // o detalhe: arquivos, commits, stash, branches e as ações da linha
+                        // the detail: files, commits, stash, branches and the row's actions
                         if r.path == open: VerticalLayout {
                             padding-left: 14px;
                             padding-bottom: 6px;
                             spacing: 2px;
                             for f in detail-files: Line { theme: theme; text: f; font-family: theme.font-mono; color: theme.text; }
                             if detail-more != "": Line { theme: theme; text: detail-more; }
-                            if detail-commits.length > 0: Line { theme: theme; text: "Últimos commits"; color: theme.text; font-weight: 700; }
+                            if detail-commits.length > 0: Line { theme: theme; text: @tr("Latest commits"); color: theme.text; font-weight: 700; }
                             for c in detail-commits: Line { theme: theme; text: c; font-family: theme.font-mono; }
                             if detail-stash.length > 0: Line { theme: theme; text: "Stash"; color: theme.text; font-weight: 700; }
                             for s in detail-stash: Line { theme: theme; text: s; font-family: theme.font-mono; }
@@ -229,12 +229,12 @@ export component Main inherits Rectangle {
                                 padding-top: 4px;
                                 spacing: 6px;
                                 alignment: start;
-                                Button { theme: theme; label: r.pinned ? "Desafixar" : "Fixar no topo"; clicked => { root.action("pin", r.path); } }
-                                Button { theme: theme; label: r.hidden ? "Mostrar" : "Ocultar"; clicked => { root.action("hide", r.path); } }
+                                Button { theme: theme; label: r.pinned ? @tr("Unpin") : @tr("Pin to top"); clicked => { root.action("pin", r.path); } }
+                                Button { theme: theme; label: r.hidden ? @tr("Show") : @tr("Hide"); clicked => { root.action("hide", r.path); } }
                                 if detail-merged != "": Button {
                                     theme: theme;
                                     strong: confirm-prune == r.path;
-                                    label: confirm-prune == r.path ? "Confirmar: apagar" : "Apagar branches mergeadas";
+                                    label: confirm-prune == r.path ? @tr("Confirm: delete") : @tr("Delete merged branches");
                                     clicked => {
                                         if confirm-prune == r.path {
                                             confirm-prune = "";
@@ -252,10 +252,10 @@ export component Main inherits Rectangle {
                         padding-top: 6px;
                         HorizontalLayout {
                             spacing: 4px;
-                            if r.can-push: Button { theme: theme; strong: true; label: "↑ Enviar"; clicked => { root.action("push", r.path); } }
-                            if r.can-pull: Button { theme: theme; strong: true; label: "↓ Puxar"; clicked => { root.action("pull", r.path); } }
+                            if r.can-push: Button { theme: theme; strong: true; label: "↑ " + @tr("Push"); clicked => { root.action("push", r.path); } }
+                            if r.can-pull: Button { theme: theme; strong: true; label: "↓ " + @tr("Pull"); clicked => { root.action("pull", r.path); } }
                             Button { theme: theme; label: ">_"; clicked => { root.action("terminal", r.path); } }
-                            if !narrow: Button { theme: theme; label: "Pasta"; clicked => { root.action("folder", r.path); } }
+                            if !narrow: Button { theme: theme; label: @tr("Folder"); clicked => { root.action("folder", r.path); } }
                             if !narrow && editor != "": Button { theme: theme; label: editor; clicked => { root.action("editor", r.path); } }
                         }
                     }
@@ -267,7 +267,7 @@ export component Main inherits Rectangle {
             spacing: 8px;
             if footer != "": Text { text: footer; color: theme.muted; font-size: 11px * theme.text-scale; vertical-alignment: center; }
             if hidden-count > 0: Text {
-                text: (hidden-count == 1 ? "1 oculto" : hidden-count + " ocultos") + (show-hidden ? " · esconder" : " · mostrar");
+                text: (hidden-count == 1 ? @tr("1 hidden") : @tr("{} hidden", hidden-count)) + " · " + (show-hidden ? @tr("hide") : @tr("show"));
                 color: theme.sub;
                 font-size: 11px * theme.text-scale;
                 vertical-alignment: center;

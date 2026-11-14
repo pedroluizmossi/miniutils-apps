@@ -1,19 +1,19 @@
-//! Miudezas por sistema que um app externo costuma precisar: rodar um programa sem janela
-//! de console, abrir pasta ou arquivo no programa padrão, abrir um terminal numa pasta e
-//! pedir uma pasta ao usuário.
+//! Per-OS odds and ends an external app often needs: run a program without a console
+//! window, open a folder or file in the default program, open a terminal in a folder and
+//! ask the user for a folder.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// `CREATE_NO_WINDOW`: programa de console sem janela (o app roda sem console, e cada
-/// filho abriria uma janela piscando).
+/// `CREATE_NO_WINDOW`: console program without a window (the app runs without a console,
+/// and each child would open a flashing window).
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-/// `CREATE_NEW_CONSOLE`: o terminal que o usuário pediu, com janela própria.
+/// `CREATE_NEW_CONSOLE`: the terminal the user asked for, with its own window.
 #[cfg(windows)]
 const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
-/// `Command` para um programa de segundo plano (no Windows, sem janela de console).
+/// `Command` for a background program (on Windows, without a console window).
 pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     #[allow(unused_mut)]
     let mut cmd = Command::new(program);
@@ -25,7 +25,7 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     cmd
 }
 
-/// Caminho de um programa no PATH (no Windows, com as extensões do `PATHEXT`).
+/// Path of a program on the PATH (on Windows, with the `PATHEXT` extensions).
 pub fn which(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let names: Vec<String> = if cfg!(windows) {
@@ -37,7 +37,7 @@ pub fn which(program: &str) -> Option<PathBuf> {
     std::env::split_paths(&path).find_map(|d| names.iter().map(|n| d.join(n)).find(|p| p.is_file()))
 }
 
-/// Lança e esquece: uma thread recolhe o processo quando ele sair (sem zumbi).
+/// Fire and forget: a thread reaps the process when it exits (no zombie).
 pub fn spawn_detached(cmd: &mut Command) -> std::io::Result<()> {
     let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
     std::thread::spawn(move || {
@@ -46,23 +46,24 @@ pub fn spawn_detached(cmd: &mut Command) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Abre uma pasta ou arquivo no programa padrão do sistema.
+/// Opens a folder or file in the system's default program.
 pub fn open_path(path: &Path) -> std::io::Result<()> {
     if cfg!(windows) {
-        // o explorer abre pasta e, para arquivo, o programa associado
+        // explorer opens folders and, for files, the associated program
         spawn_detached(command("explorer.exe").arg(path))
     } else {
         spawn_detached(command("xdg-open").arg(path))
     }
 }
 
-/// Abre o seletor de pasta do sistema e espera a escolha: `Ok(None)` se a pessoa cancelou.
-/// Bloqueia até fechar, então chame numa thread. No Linux usa o `zenity`, o `kdialog` ou o
-/// `yad` (o primeiro que houver); no Windows, o diálogo do .NET pelo PowerShell.
+/// Opens the system folder picker and waits for the choice: `Ok(None)` if the user
+/// cancelled. Blocks until it closes, so call it on a thread. On Linux it uses `zenity`,
+/// `kdialog` or `yad` (the first one found); on Windows, the .NET dialog through PowerShell.
+/// Without any picker the error is [`std::io::ErrorKind::NotFound`].
 pub fn pick_folder(title: &str) -> std::io::Result<Option<PathBuf>> {
     let mut cmd = folder_dialog(title)?;
     let out = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output()?;
-    // fechar ou cancelar sai com código 1 nos três do Linux; o do Windows não imprime nada
+    // closing or cancelling exits with code 1 in the three Linux ones; the Windows one prints nothing
     let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
     Ok((out.status.success() && !path.is_empty()).then(|| PathBuf::from(path)))
 }
@@ -85,12 +86,12 @@ fn folder_dialog(title: &str) -> std::io::Result<Command> {
         c.args(["--file", "--directory"]).arg(format!("--title={title}"));
         return Ok(c);
     }
-    Err(std::io::Error::new(std::io::ErrorKind::NotFound, "nenhum seletor de pasta (instale o zenity ou o kdialog)"))
+    Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no folder picker found (install zenity or kdialog)"))
 }
 
 #[cfg(windows)]
 fn folder_dialog(title: &str) -> std::io::Result<Command> {
-    // o título vai por variável de ambiente: nada de montar o script com texto de fora
+    // the title goes through an environment variable: never build the script from outside text
     let script = "Add-Type -AssemblyName System.Windows.Forms; \
         $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }; \
         $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
@@ -102,7 +103,7 @@ fn folder_dialog(title: &str) -> std::io::Result<Command> {
     Ok(c)
 }
 
-/// Terminais conhecidos do Linux, na ordem de preferência (depois do `$TERMINAL`).
+/// Known Linux terminals, in order of preference (after `$TERMINAL`).
 #[cfg(not(windows))]
 const TERMINALS: &[&str] = &[
     "x-terminal-emulator",
@@ -119,7 +120,8 @@ const TERMINALS: &[&str] = &[
     "xterm",
 ];
 
-/// Abre um terminal começando em `dir`.
+/// Opens a terminal starting in `dir`. Without any terminal the error is
+/// [`std::io::ErrorKind::NotFound`].
 #[cfg(not(windows))]
 pub fn open_terminal(dir: &Path) -> std::io::Result<()> {
     let from_env = std::env::var("TERMINAL").ok().filter(|t| !t.is_empty());
@@ -127,9 +129,9 @@ pub fn open_terminal(dir: &Path) -> std::io::Result<()> {
         .into_iter()
         .chain(TERMINALS.iter().map(|t| t.to_string()))
         .find(|t| which(t).is_some())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "nenhum terminal encontrado (defina $TERMINAL)"))?;
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no terminal found (set $TERMINAL)"))?;
     let mut cmd = command(&term);
-    // a maioria começa na pasta do processo; estes pedem a pasta por argumento
+    // most start in the process's folder; these take the folder as an argument
     match term.as_str() {
         "gnome-terminal" | "xfce4-terminal" | "tilix" | "terminator" => {
             cmd.arg(format!("--working-directory={}", dir.display()));
@@ -145,7 +147,7 @@ pub fn open_terminal(dir: &Path) -> std::io::Result<()> {
     spawn_detached(cmd.current_dir(dir))
 }
 
-/// Abre um terminal começando em `dir`: o Windows Terminal, se houver; senão o `cmd`.
+/// Opens a terminal starting in `dir`: Windows Terminal, if installed; otherwise `cmd`.
 #[cfg(windows)]
 pub fn open_terminal(dir: &Path) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;

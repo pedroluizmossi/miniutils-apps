@@ -1,35 +1,38 @@
-//! O que o `git` diz de um repositório. Usa o próprio `git` (e não uma biblioteca): o
-//! status sai igual ao do terminal do usuário, com `.gitignore`, config e fsmonitor.
+//! What `git` says about a repository. Uses `git` itself (not a library): the status comes
+//! out the same as in the user's terminal, with `.gitignore`, config and fsmonitor.
 //!
-//! Toda chamada tem prazo, roda sem pedir senha e com `--no-optional-locks` (o `status`
-//! não regrava o índice: senão cada leitura dispararia o vigia do `.git` de novo).
+//! Every call has a deadline, never asks for a password and runs with
+//! `--no-optional-locks` (`status` does not rewrite the index: otherwise each read would
+//! trigger the `.git` watcher again).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// Prazo de um `status` (repositório enorme ou disco lento).
+use crate::i18n::{fmt, tr};
+
+/// Deadline of a `status` (huge repository or slow disk).
 const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
-/// Prazo de um `fetch` (rede).
+/// Deadline of a `fetch` (network).
 const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
-/// Prazo de um `push` ou `pull` pedido pelo botão (rede, e o hook de pre-push).
+/// Deadline of a `push` or `pull` requested by the button (network, and the pre-push hook).
 const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
-/// Prazo das leituras rápidas (log, stash, branches).
+/// Deadline of the quick reads (log, stash, branches).
 const QUICK_TIMEOUT: Duration = Duration::from_secs(10);
-/// Quantos arquivos alterados conferir para achar a mudança mais antiga.
+/// How many changed files to check to find the oldest change.
 const MAX_AGE_PATHS: usize = 300;
 
-/// Um arquivo alterado: o código curto da mudança e o caminho relativo ao repositório.
+/// A changed file: the short code of the change and the path relative to the repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileChange {
-    /// `M` alterado, `A` novo no índice, `D` apagado, `R` renomeado, `T` mudou de tipo,
-    /// `U` em conflito, `?` fora do git.
+    /// `M` modified, `A` added to the index, `D` deleted, `R` renamed, `T` type changed,
+    /// `U` conflicted, `?` untracked.
     pub code: char,
     pub path: String,
 }
 
-/// Um commit para o detalhe: hash curto, assunto e data (segundos desde 1970).
+/// A commit for the detail: short hash, subject and time (seconds since 1970).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     pub hash: String,
@@ -37,23 +40,23 @@ pub struct Commit {
     pub time: u64,
 }
 
-/// O resumo do `git status --porcelain=v2 --branch --show-stash`.
+/// The summary of `git status --porcelain=v2 --branch --show-stash`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Status {
-    /// Nome da branch; vazio = HEAD solto (detached).
+    /// Branch name; empty = detached HEAD.
     pub branch: String,
-    /// Branch remota que esta acompanha (`origin/main`), se houver.
+    /// Remote branch this one tracks (`origin/main`), if any.
     pub upstream: Option<String>,
     pub ahead: u32,
     pub behind: u32,
-    /// Alterações já no índice (`git add`).
+    /// Changes already in the index (`git add`).
     pub staged: u32,
-    /// Alterações fora do índice.
+    /// Changes outside the index.
     pub unstaged: u32,
     pub untracked: u32,
     pub conflicts: u32,
     pub stash: u32,
-    /// Arquivos alterados, para a idade das mudanças e o detalhe.
+    /// Changed files, for the age of the changes and the detail.
     pub files: Vec<FileChange>,
 }
 
@@ -63,7 +66,7 @@ impl Status {
     }
 }
 
-/// Lê a saída de `git status --porcelain=v2 --branch --show-stash -z`.
+/// Reads the output of `git status --porcelain=v2 --branch --show-stash -z`.
 pub fn parse_status(out: &[u8]) -> Status {
     let mut st = Status::default();
     let text = String::from_utf8_lossy(out);
@@ -88,7 +91,7 @@ pub fn parse_status(out: &[u8]) -> Status {
             }
             continue;
         }
-        // campos antes do caminho: "1" tem 8, "2" (renomeado) tem 9, "u" (conflito) tem 10
+        // fields before the path: "1" has 8, "2" (renamed) has 9, "u" (conflict) has 10
         let (fields, kind) = match rec.as_bytes().first() {
             Some(b'1') => (8, '1'),
             Some(b'2') => (9, '2'),
@@ -115,7 +118,7 @@ pub fn parse_status(out: &[u8]) -> Status {
                 if y != '.' {
                     st.unstaged += 1;
                 }
-                // o do índice primeiro; cópia conta como novo
+                // the index one first; a copy counts as added
                 match if x != '.' { x } else { y } {
                     _ if kind == '2' => 'R',
                     'A' | 'C' => 'A',
@@ -126,7 +129,7 @@ pub fn parse_status(out: &[u8]) -> Status {
             }
         };
         st.files.push(FileChange { code, path: path.to_string() });
-        // o renomeado traz o caminho antigo no registro seguinte
+        // a rename carries the old path in the next record
         if kind == '2' {
             records.next();
         }
@@ -134,13 +137,14 @@ pub fn parse_status(out: &[u8]) -> Status {
     st
 }
 
-/// Roda o `git` em `dir`, com prazo. Devolve o stdout, ou a primeira linha do erro.
+/// Runs `git` in `dir`, with a deadline. Returns stdout, or the first line of the error.
 pub fn git(dir: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, String> {
     run("git", dir, args, timeout)
 }
 
-/// Roda `program` (o `git` ou o `gh`) em `dir`, com prazo e sem nunca pedir senha nem
-/// confirmação. Devolve o stdout, ou a primeira linha do erro.
+/// Runs `program` (`git` or `gh`) in `dir`, with a deadline and never asking for a
+/// password or confirmation. Returns stdout, or the first line of the error (which the
+/// user sees).
 pub fn run(program: &str, dir: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, String> {
     let mut cmd = miniutils_app::os::command(program);
     cmd.args(args)
@@ -152,12 +156,12 @@ pub fn run(program: &str, dir: &Path, args: &[&str], timeout: Duration) -> Resul
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // fetch por ssh sem chave carregada: falha em vez de esperar senha
+    // fetch over ssh without a loaded key: fail instead of waiting for a password
     if std::env::var_os("GIT_SSH_COMMAND").is_none() {
         cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
     }
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => format!("o {program} não está instalado"),
+        std::io::ErrorKind::NotFound => fmt("{} is not installed", &[&program]),
         _ => format!("{program}: {e}"),
     })?;
     let mut stdout = child.stdout.take();
@@ -184,7 +188,8 @@ pub fn run(program: &str, dir: &Path, args: &[&str], timeout: Duration) -> Resul
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("{program} {} não respondeu em {} s", args.first().unwrap_or(&""), timeout.as_secs()));
+                let command = format!("{program} {}", args.first().unwrap_or(&""));
+                return Err(fmt("{} did not answer within {} s", &[&command, &timeout.as_secs()]));
             }
         }
     };
@@ -196,7 +201,7 @@ pub fn run(program: &str, dir: &Path, args: &[&str], timeout: Duration) -> Resul
             .lines()
             .map(|l| l.trim_start_matches("fatal: ").trim_start_matches("error: ").trim())
             .find(|l| !l.is_empty() && !l.starts_with("hint:"));
-        Err(line.map_or_else(|| format!("{program} saiu com {status}"), str::to_string))
+        Err(line.map_or_else(|| fmt("{} exited with {}", &[&program, &status]), str::to_string))
     }
 }
 
@@ -205,14 +210,14 @@ pub fn status(dir: &Path) -> Result<Status, String> {
     Ok(parse_status(&out))
 }
 
-/// Data (segundos desde 1970) do commit mais antigo ainda não enviado ao upstream.
+/// Time (seconds since 1970) of the oldest commit not yet pushed to the upstream.
 pub fn oldest_unpushed(dir: &Path) -> Option<u64> {
     let out = git(dir, &["log", "--format=%ct", "@{upstream}..HEAD"], STATUS_TIMEOUT).ok()?;
     String::from_utf8_lossy(&out).lines().filter_map(|l| l.trim().parse().ok()).min()
 }
 
-/// Data da mudança mais antiga ainda não commitada (pela data dos arquivos alterados).
-/// Arquivo apagado não tem data e fica de fora.
+/// Time of the oldest change not committed yet (by the modification time of the changed
+/// files). A deleted file has no time and is left out.
 pub fn oldest_change(dir: &Path, files: &[FileChange]) -> Option<u64> {
     files
         .iter()
@@ -226,17 +231,17 @@ pub fn fetch(dir: &Path) -> Result<(), String> {
     git(dir, &["fetch", "--quiet", "--no-write-fetch-head"], FETCH_TIMEOUT).map(|_| ())
 }
 
-/// Envia a branch atual para o upstream dela.
+/// Pushes the current branch to its upstream.
 pub fn push(dir: &Path) -> Result<(), String> {
     git(dir, &["push", "--quiet"], SYNC_TIMEOUT).map(|_| ())
 }
 
-/// Traz o upstream só se der para avançar a branch (nunca cria merge nem rebase).
+/// Pulls the upstream only if the branch can fast-forward (never creates a merge or rebase).
 pub fn pull(dir: &Path) -> Result<(), String> {
     git(dir, &["pull", "--ff-only", "--quiet"], SYNC_TIMEOUT).map(|_| ())
 }
 
-/// Os últimos `n` commits da branch atual (vazio num repositório sem commit).
+/// The last `n` commits of the current branch (empty in a repository without commits).
 pub fn recent_commits(dir: &Path, n: usize) -> Vec<Commit> {
     let count = format!("-{n}");
     let Ok(out) = git(dir, &["log", &count, "--format=%h%x1f%s%x1f%ct"], QUICK_TIMEOUT) else { return Vec::new() };
@@ -254,25 +259,25 @@ pub fn parse_commits(out: &[u8]) -> Vec<Commit> {
         .collect()
 }
 
-/// As entradas do stash: "stash@{0}: mensagem".
+/// The stash entries: "stash@{0}: message".
 pub fn stashes(dir: &Path) -> Vec<String> {
     let Ok(out) = git(dir, &["stash", "list", "--format=%gd: %s"], QUICK_TIMEOUT) else { return Vec::new() };
     String::from_utf8_lossy(&out).lines().map(str::to_string).filter(|l| !l.is_empty()).collect()
 }
 
-/// A pasta comum do repositório: numa worktree, a do repositório principal (onde ficam
-/// o `config` e as refs).
+/// The repository's common folder: in a worktree, the main repository's (where the
+/// `config` and the refs live).
 pub fn common_dir(git_dir: &Path) -> PathBuf {
     std::fs::read_to_string(git_dir.join("commondir")).map(|c| git_dir.join(c.trim())).unwrap_or_else(|_| git_dir.to_path_buf())
 }
 
-/// O `config` do repositório (vazio se não der para ler).
+/// The repository's `config` (empty if it cannot be read).
 pub fn config_text(git_dir: &Path) -> String {
     std::fs::read_to_string(common_dir(git_dir).join("config")).unwrap_or_default()
 }
 
-/// A branch principal, lida do disco (sem rodar o git): a do `origin/HEAD` ("origin/main")
-/// ou, sem ela, a `main` ou a `master` locais.
+/// The main branch, read from disk (without running git): the one `origin/HEAD` points to
+/// ("origin/main") or, without it, the local `main` or `master`.
 pub fn default_branch(git_dir: &Path) -> Option<String> {
     let common = common_dir(git_dir);
     if let Ok(head) = std::fs::read_to_string(common.join("refs/remotes/origin/HEAD"))
@@ -287,19 +292,19 @@ pub fn default_branch(git_dir: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
-/// O nome local de uma branch ("origin/main" -> "main").
+/// The local name of a branch ("origin/main" -> "main").
 pub fn short_branch(branch: &str) -> &str {
     branch.split_once('/').map_or(branch, |(_, b)| b)
 }
 
-/// Branches locais já mergeadas em `base`, tirando a atual e a própria principal.
+/// Local branches already merged into `base`, except the current one and the main one.
 pub fn merged_branches(dir: &Path, base: &str, current: &str) -> Vec<String> {
     let Ok(out) = git(dir, &["branch", "--merged", base, "--format=%(refname:short)"], QUICK_TIMEOUT) else { return Vec::new() };
     let keep = |b: &str| !b.is_empty() && b != current && b != short_branch(base) && b != base && !matches!(b, "main" | "master");
     String::from_utf8_lossy(&out).lines().map(str::trim).filter(|b| keep(b)).map(str::to_string).collect()
 }
 
-/// Apaga branches locais com `-d`: o git recusa a que ainda não foi mergeada.
+/// Deletes local branches with `-d`: git refuses one that is not merged yet.
 pub fn delete_branches(dir: &Path, branches: &[String]) -> Result<(), String> {
     if branches.is_empty() {
         return Ok(());
@@ -309,8 +314,8 @@ pub fn delete_branches(dir: &Path, branches: &[String]) -> Result<(), String> {
     git(dir, &args, QUICK_TIMEOUT).map(|_| ())
 }
 
-/// A pasta do git do repositório: `.git`, ou o destino de um arquivo `.git` (worktree,
-/// submódulo: "gitdir: …").
+/// The repository's git folder: `.git`, or the target of a `.git` file (worktree,
+/// submodule: "gitdir: …").
 pub fn git_dir(repo: &Path) -> PathBuf {
     let dot = repo.join(".git");
     if dot.is_file()
@@ -322,19 +327,19 @@ pub fn git_dir(repo: &Path) -> PathBuf {
     dot
 }
 
-/// Operação pela metade (merge, rebase…), que pede a atenção do usuário.
+/// Half-done operation (merge, rebase…) that needs the user's attention, as the row shows it.
 pub fn operation(git_dir: &Path) -> Option<&'static str> {
     let has = |name: &str| git_dir.join(name).exists();
     if has("rebase-merge") || has("rebase-apply") {
-        Some("rebase em andamento")
+        Some(tr("rebase in progress"))
     } else if has("MERGE_HEAD") {
-        Some("merge em andamento")
+        Some(tr("merge in progress"))
     } else if has("CHERRY_PICK_HEAD") {
-        Some("cherry-pick em andamento")
+        Some(tr("cherry-pick in progress"))
     } else if has("REVERT_HEAD") {
-        Some("revert em andamento")
+        Some(tr("revert in progress"))
     } else if has("BISECT_LOG") {
-        Some("bisect em andamento")
+        Some(tr("bisect in progress"))
     } else {
         None
     }
@@ -349,7 +354,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn le_o_status_porcelain_v2() {
+    fn reads_porcelain_v2_status() {
         let out = [
             "# branch.oid 1234",
             "# branch.head main",
@@ -357,13 +362,13 @@ mod tests {
             "# branch.ab +2 -1",
             "# stash 3",
             "1 M. N... 100644 100644 100644 aaa bbb src/main.rs",
-            "1 .M N... 100644 100644 100644 aaa bbb nome com espaço.txt",
-            "1 MM N... 100644 100644 100644 aaa bbb dois.rs",
-            "2 R. N... 100644 100644 100644 aaa bbb R100 novo.rs",
-            "antigo.rs",
-            "u UU N... 100644 100644 100644 100644 aaa bbb ccc conflito.rs",
-            "? solto.txt",
-            "! ignorado/",
+            "1 .M N... 100644 100644 100644 aaa bbb name with space.txt",
+            "1 MM N... 100644 100644 100644 aaa bbb two.rs",
+            "2 R. N... 100644 100644 100644 aaa bbb R100 new.rs",
+            "old.rs",
+            "u UU N... 100644 100644 100644 100644 aaa bbb ccc conflict.rs",
+            "? loose.txt",
+            "! ignored/",
             "",
         ]
         .join("\0");
@@ -375,46 +380,46 @@ mod tests {
         let files: Vec<(char, &str)> = st.files.iter().map(|f| (f.code, f.path.as_str())).collect();
         assert_eq!(
             files,
-            [('M', "src/main.rs"), ('M', "nome com espaço.txt"), ('M', "dois.rs"), ('R', "novo.rs"), ('U', "conflito.rs"), ('?', "solto.txt")]
+            [('M', "src/main.rs"), ('M', "name with space.txt"), ('M', "two.rs"), ('R', "new.rs"), ('U', "conflict.rs"), ('?', "loose.txt")]
         );
         assert!(st.dirty());
-        let st = parse_status(b"1 A. N... 0 100644 100644 0 bbb novo.rs\x001 .D N... 100644 100644 0 aaa bbb foi.rs\0");
+        let st = parse_status(b"1 A. N... 0 100644 100644 0 bbb new.rs\x001 .D N... 100644 100644 0 aaa bbb gone.rs\0");
         let codes: Vec<char> = st.files.iter().map(|f| f.code).collect();
         assert_eq!(codes, ['A', 'D']);
     }
 
     #[test]
-    fn le_os_commits_e_o_nome_curto_da_branch() {
-        let c = parse_commits(b"abc1234\x1ffix: algo | com barra\x1f1700000000\ndef5678\x1f\x1f1\n");
+    fn reads_commits_and_short_branch_name() {
+        let c = parse_commits(b"abc1234\x1ffix: something | with a bar\x1f1700000000\ndef5678\x1f\x1f1\n");
         assert_eq!(c.len(), 2);
-        assert_eq!((c[0].hash.as_str(), c[0].subject.as_str(), c[0].time), ("abc1234", "fix: algo | com barra", 1_700_000_000));
+        assert_eq!((c[0].hash.as_str(), c[0].subject.as_str(), c[0].time), ("abc1234", "fix: something | with a bar", 1_700_000_000));
         assert_eq!(c[1].subject, "");
         assert_eq!(short_branch("origin/main"), "main");
         assert_eq!(short_branch("main"), "main");
     }
 
     #[test]
-    fn head_solto_e_repositorio_novo() {
+    fn detached_head_and_new_repository() {
         let st = parse_status(b"# branch.oid (initial)\0# branch.head (detached)\0");
         assert_eq!(st, Status::default());
         assert!(!st.dirty());
     }
 
-    /// Um repositório de verdade: alterado, commitado e com merge pela metade.
+    /// A real repository: changed, committed and with a half-done merge.
     #[test]
-    fn status_de_um_repositorio_de_verdade() {
+    fn status_of_a_real_repository() {
         let dir = std::env::temp_dir().join(format!("repos-git-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let run = |args: &[&str]| git(&dir, args, STATUS_TIMEOUT).unwrap();
         if git(&dir, &["init", "-q", "-b", "main"], STATUS_TIMEOUT).is_err() {
-            return; // sem git na máquina de teste
+            return; // no git on the test machine
         }
         std::fs::write(dir.join("a.txt"), "1").unwrap();
         let st = status(&dir).unwrap();
         assert_eq!((st.branch.as_str(), st.untracked), ("main", 1));
         assert!(oldest_change(&dir, &st.files).is_some_and(|t| t <= now()));
-        assert!(recent_commits(&dir, 3).is_empty(), "sem commit ainda");
+        assert!(recent_commits(&dir, 3).is_empty(), "no commit yet");
         run(&["add", "a.txt"]);
         let commit = |msg: &str| run(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", msg]);
         commit("x");
@@ -422,25 +427,25 @@ mod tests {
         assert!(!st.dirty() && st.upstream.is_none());
         assert_eq!(git_dir(&dir), dir.join(".git"));
         assert_eq!(operation(&git_dir(&dir)), None);
-        // branch principal pelo disco, e uma branch já mergeada nela
+        // main branch from disk, and a branch already merged into it
         assert_eq!(default_branch(&git_dir(&dir)).as_deref(), Some("main"));
-        run(&["branch", "feita"]);
-        run(&["checkout", "-q", "-b", "nova"]);
+        run(&["branch", "done"]);
+        run(&["checkout", "-q", "-b", "fresh"]);
         std::fs::write(dir.join("b.txt"), "2").unwrap();
         run(&["add", "b.txt"]);
         commit("y");
-        assert_eq!(merged_branches(&dir, "main", "nova"), ["feita"]);
+        assert_eq!(merged_branches(&dir, "main", "fresh"), ["done"]);
         let log = recent_commits(&dir, 3);
         assert_eq!(log.iter().map(|c| c.subject.as_str()).collect::<Vec<_>>(), ["y", "x"]);
         run(&["checkout", "-q", "main"]);
-        // "nova" não está em main: o -d recusa e nada some
-        assert!(delete_branches(&dir, &["nova".to_string()]).is_err());
-        delete_branches(&dir, &["feita".to_string()]).unwrap();
+        // "fresh" is not in main: -d refuses and nothing is lost
+        assert!(delete_branches(&dir, &["fresh".to_string()]).is_err());
+        delete_branches(&dir, &["done".to_string()]).unwrap();
         assert_eq!(merged_branches(&dir, "main", "main"), Vec::<String>::new());
         assert!(stashes(&dir).is_empty());
         std::fs::write(dir.join(".git/MERGE_HEAD"), "x").unwrap();
-        assert_eq!(operation(&git_dir(&dir)), Some("merge em andamento"));
-        assert!(git(&dir, &["rev-parse", "nao-existe"], STATUS_TIMEOUT).is_err());
+        assert_eq!(operation(&git_dir(&dir)), Some("merge in progress"));
+        assert!(git(&dir, &["rev-parse", "does-not-exist"], STATUS_TIMEOUT).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

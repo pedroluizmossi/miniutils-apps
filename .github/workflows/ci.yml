@@ -1,4 +1,4 @@
-# Confere que todos os apps compilam e passam nos testes no Linux e no Windows.
+# Checks that every app builds and passes its tests on Linux and Windows.
 name: CI
 
 on:
@@ -28,7 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --workspace --all-targets --locked
-      # aviso do clippy reprova, como no hub
+      # a clippy warning fails, as in the hub
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test

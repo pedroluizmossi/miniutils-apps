@@ -1,8 +1,8 @@
-//! Agentes de IA trabalhando nos repositórios, pelo provedor `agents` do hub (o mesmo do
-//! app Agentes: Claude Code, Codex e OpenCode). O hub manda a lista de sessões com a pasta
-//! de cada uma; aqui ela vira "quem está em qual repositório".
+//! AI agents working in the repositories, through the hub's `agents` provider (the same as
+//! the Agents app: Claude Code, Codex and OpenCode). The hub sends the list of sessions
+//! with each one's folder; here it becomes "who is in which repository".
 //!
-//! Tudo puro (sem disco nem processo), para testar.
+//! All pure (no disk or process), so it can be tested.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -10,24 +10,26 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-/// O que o agente está fazendo, do mais calmo ao que mais pede atenção.
+use crate::i18n::fmt;
+
+/// What the agent is doing, from calmest to most in need of attention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Activity {
-    /// Terminou o turno e espera o próximo pedido.
+    /// Finished its turn and waits for the next request.
     Idle,
     Working,
-    /// Parado esperando o usuário (permissão, pergunta).
+    /// Stopped waiting for the user (permission, question).
     Waiting,
 }
 
 impl Activity {
-    /// Está no meio de alguma coisa (trabalhando ou esperando resposta).
+    /// In the middle of something (working or waiting for an answer).
     pub fn active(self) -> bool {
         self != Activity::Idle
     }
 }
 
-/// O agente mais relevante de um repositório.
+/// The most relevant agent of a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {
     /// "Claude", "Codex", "OpenCode".
@@ -36,16 +38,16 @@ pub struct Seen {
 }
 
 impl Seen {
-    /// O texto da linha: "Claude trabalhando", "Codex espera você"; parado não aparece.
+    /// The row's text: "Claude working", "Codex is waiting for you"; idle shows nothing.
     pub fn label(&self) -> String {
         match self.activity {
-            Activity::Working => format!("{} trabalhando", self.tool),
-            Activity::Waiting => format!("{} espera você", self.tool),
+            Activity::Working => fmt("{} working", &[&self.tool]),
+            Activity::Waiting => fmt("{} is waiting for you", &[&self.tool]),
             Activity::Idle => String::new(),
         }
     }
 
-    /// "working", "waiting" ou "" (para a cor na tela).
+    /// "working", "waiting" or "" (for the color in the view).
     pub fn key(&self) -> &'static str {
         match self.activity {
             Activity::Working => "working",
@@ -69,7 +71,7 @@ struct Session {
     cwd: String,
     #[serde(default)]
     state: String,
-    /// Subagente: segue o agente que o disparou, que já conta.
+    /// Subagent: follows the agent that started it, which already counts.
     #[serde(default)]
     parent: Option<String>,
 }
@@ -86,17 +88,17 @@ fn tool_name(key: &str) -> String {
     }
 }
 
-/// Caminho para comparar: barras normais, sem barra no fim e, no Windows, sem diferença
-/// de maiúsculas (lá `C:\Projetos` e `c:\projetos` são a mesma pasta).
+/// Path for comparing: forward slashes, no trailing slash and, on Windows, case-insensitive
+/// (there `C:\Projects` and `c:\projects` are the same folder).
 fn norm(p: &str) -> String {
     let s = p.replace('\\', "/");
     let s = s.trim_end_matches('/');
     if cfg!(windows) { s.to_lowercase() } else { s.to_string() }
 }
 
-/// Os agentes de cada repositório, pela pasta de cada sessão (a sessão numa subpasta conta
-/// para o repositório; com repositórios aninhados, o mais de dentro). Com vários agentes
-/// no mesmo repositório, fica o que mais pede atenção.
+/// The agents of each repository, by each session's folder (a session in a subfolder
+/// counts for the repository; with nested repositories, the innermost one). With several
+/// agents in the same repository, the one most in need of attention wins.
 pub fn by_repo(data: &Value, repos: &[PathBuf]) -> HashMap<PathBuf, Seen> {
     let Ok(snap) = Snapshot::deserialize(data) else { return HashMap::new() };
     let keys: Vec<(String, &PathBuf)> = repos.iter().map(|r| (norm(&r.to_string_lossy()), r)).collect();
@@ -121,7 +123,7 @@ pub fn by_repo(data: &Value, repos: &[PathBuf]) -> HashMap<PathBuf, Seen> {
     out
 }
 
-/// Repositórios em que um agente estava ativo e parou (terminou o turno ou fechou).
+/// Repositories where an agent was working and stopped (finished its turn or closed).
 pub fn finished<'a>(before: &'a HashMap<PathBuf, Seen>, now: &HashMap<PathBuf, Seen>) -> Vec<(&'a Path, &'a str)> {
     before
         .iter()
@@ -140,26 +142,26 @@ mod tests {
     }
 
     #[test]
-    fn cada_sessao_vai_para_o_repositorio_dela() {
+    fn each_session_goes_to_its_repository() {
         let repos = [path("/p/api"), path("/p/api/vendor/lib"), path("/p/site"), path("/p/apix")];
         let data = json!({"agents": [
             {"tool": "claude", "cwd": "/p/api/src", "state": "working", "parent": null},
             {"tool": "codex", "cwd": "/p/api/vendor/lib", "state": "idle"},
             {"tool": "opencode", "cwd": "/p/site/", "state": "waiting"},
-            // subagente: o pai já conta
+            // subagent: the parent already counts
             {"tool": "claude", "cwd": "/p/apix", "state": "working", "parent": "abc"},
-            {"tool": "claude", "cwd": "/fora", "state": "working"},
+            {"tool": "claude", "cwd": "/elsewhere", "state": "working"},
         ], "found": ["claude"], "errors": []});
         let m = by_repo(&data, &repos);
         assert_eq!(m.len(), 3);
-        assert_eq!(m[&path("/p/api")].label(), "Claude trabalhando");
+        assert_eq!(m[&path("/p/api")].label(), "Claude working");
         assert_eq!(m[&path("/p/api/vendor/lib")].activity, Activity::Idle);
-        assert_eq!(m[&path("/p/site")].label(), "OpenCode espera você");
-        assert!(!m.contains_key(&path("/p/apix")), "/p/apix não é /p/api nem conta o subagente");
+        assert_eq!(m[&path("/p/site")].label(), "OpenCode is waiting for you");
+        assert!(!m.contains_key(&path("/p/apix")), "/p/apix is not /p/api and the subagent does not count");
     }
 
     #[test]
-    fn no_mesmo_repositorio_fica_quem_pede_atencao() {
+    fn in_the_same_repository_the_one_needing_attention_wins() {
         let repos = [path("/p/api")];
         let data = json!({"agents": [
             {"tool": "codex", "cwd": "/p/api", "state": "working"},
@@ -167,20 +169,20 @@ mod tests {
             {"tool": "opencode", "cwd": "/p/api", "state": "idle"},
         ]});
         assert_eq!(by_repo(&data, &repos)[&path("/p/api")].tool, "Claude");
-        assert!(by_repo(&json!({"novidade": 1}), &repos).is_empty());
+        assert!(by_repo(&json!({"something_new": 1}), &repos).is_empty());
         assert!(by_repo(&Value::Null, &repos).is_empty());
     }
 
     #[cfg(windows)]
     #[test]
-    fn no_windows_compara_sem_maiusculas_nem_barra() {
-        let repos = [path(r"C:\Projetos\api")];
-        let data = json!({"agents": [{"tool": "claude", "cwd": "c:/projetos/API/src", "state": "working"}]});
+    fn on_windows_compares_ignoring_case_and_slashes() {
+        let repos = [path(r"C:\Projects\api")];
+        let data = json!({"agents": [{"tool": "claude", "cwd": "c:/projects/API/src", "state": "working"}]});
         assert_eq!(by_repo(&data, &repos).len(), 1);
     }
 
     #[test]
-    fn agente_que_parou_de_trabalhar() {
+    fn agent_that_stopped_working() {
         let w = |t: &str, a| Seen { tool: t.into(), activity: a };
         let before = HashMap::from([
             (path("/a"), w("Claude", Activity::Working)),
@@ -194,7 +196,7 @@ mod tests {
         ]);
         let mut done: Vec<_> = finished(&before, &now).into_iter().map(|(p, t)| (p.to_path_buf(), t)).collect();
         done.sort();
-        // /c passou a esperar o usuário (não terminou); /d já não trabalhava
+        // /c started waiting for the user (did not finish); /d was not working anymore
         assert_eq!(done, [(path("/a"), "Claude"), (path("/b"), "Codex")]);
     }
 }

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Monta a entrada de um app para o registry.json da loja do MiniUtils.
+"""Builds an app's entry for the MiniUtils store registry.json.
 
-Lê o manifest.toml do app e as somas SHA-256 dos executáveis publicados num Release e
-imprime o JSON pronto para colar na lista "plugins" do índice da loja (depois, assine o
-índice de novo com `miniutils --loja-assinar`).
+Reads the app's manifest.toml and the SHA-256 sums of the executables published in a
+Release and prints the JSON ready to paste into the "plugins" list of the store index
+(then sign the index again with `miniutils --store-sign`).
 
     python3 tools/index_entry.py --app repos --tag repos-v0.1.0 \\
-        --commit <sha> --repo https://github.com/<você>/miniutils-apps --dist dist
+        --commit <sha> --repo https://github.com/<you>/miniutils-apps --dist dist
 
-Em `--dist` ficam os executáveis com o nome que o workflow de release dá
-(`<app>-linux-x86_64`, `<app>-windows-x86_64.exe`) e um `<arquivo>.sha256` ao lado de cada.
+`--dist` holds the executables with the names the release workflow gives them
+(`<app>-linux-x86_64`, `<app>-windows-x86_64.exe`) and a `<file>.sha256` next to each one.
+
+Only the executables are release assets: the store installs the rest of the app folder
+(manifest.toml, view.slint, i18n/*.po, …) from the pinned commit, so nothing here lists
+those files.
 """
 
 import argparse
@@ -20,7 +24,7 @@ import sys
 import tomllib
 from typing import NoReturn
 
-# sistema no manifesto ([app] linux/windows) -> nome do arquivo publicado
+# system in the manifest ([app] linux/windows) -> name of the published file
 ASSETS = {"linux": "{app}-linux-x86_64", "windows": "{app}-windows-x86_64.exe"}
 
 
@@ -31,12 +35,12 @@ def fail(msg: str) -> NoReturn:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--app", required=True, help="pasta do app (ex.: repos)")
-    p.add_argument("--tag", required=True, help="tag do Release (ex.: repos-v0.1.0)")
-    p.add_argument("--commit", required=True, help="SHA completo do commit da tag")
-    p.add_argument("--repo", required=True, help="https://github.com/<dono>/<repositório>")
-    p.add_argument("--dist", required=True, help="pasta com os executáveis e os .sha256")
-    p.add_argument("--author", default="", help="autor (padrão: o dono do repositório)")
+    p.add_argument("--app", required=True, help="app folder (e.g. repos)")
+    p.add_argument("--tag", required=True, help="Release tag (e.g. repos-v0.1.0)")
+    p.add_argument("--commit", required=True, help="full SHA of the tag's commit")
+    p.add_argument("--repo", required=True, help="https://github.com/<owner>/<repository>")
+    p.add_argument("--dist", required=True, help="folder with the executables and the .sha256 files")
+    p.add_argument("--author", default="", help="author (default: the repository owner)")
     a = p.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
@@ -45,13 +49,13 @@ def main() -> None:
     license_ = workspace.get("workspace", {}).get("package", {}).get("license", "")
 
     if not re.fullmatch(r"[0-9a-f]{40}", a.commit):
-        fail(f"--commit precisa ser o SHA completo (40 caracteres hex), não {a.commit!r}")
+        fail(f"--commit must be the full SHA (40 hex characters), not {a.commit!r}")
     version = a.tag.rsplit("-v", 1)[-1]
     app = manifest.get("app")
     if not app:
-        fail(f"{a.app}/manifest.toml não tem a seção [app]")
+        fail(f"{a.app}/manifest.toml has no [app] section")
     if manifest.get("permissions"):
-        fail("app externo não declara [permissions] (a loja o anuncia como acesso total)")
+        fail("an external app does not declare [permissions] (the store lists it as full access)")
 
     repo = a.repo.rstrip("/")
     dist = pathlib.Path(a.dist)
@@ -62,10 +66,10 @@ def main() -> None:
         asset = ASSETS[os_name].format(app=a.app)
         sha_file = dist / f"{asset}.sha256"
         if not (dist / asset).is_file() or not sha_file.is_file():
-            fail(f"o manifesto declara {os_name}, mas falta {asset} (ou {asset}.sha256) em {dist}")
+            fail(f"the manifest declares {os_name}, but {asset} (or {asset}.sha256) is missing in {dist}")
         sha = sha_file.read_text(encoding="utf-8").split()[0].lower()
         if not re.fullmatch(r"[0-9a-f]{64}", sha):
-            fail(f"{sha_file}: SHA-256 inválido")
+            fail(f"{sha_file}: invalid SHA-256")
         binaries[os_name] = {"url": f"{repo}/releases/download/{a.tag}/{asset}", "sha256": sha}
 
     entry = {
