@@ -93,6 +93,31 @@ pub fn load(data_dir: &Path) -> Vec<PathBuf> {
     roots
 }
 
+/// A linha de `pasta` no arquivo: com `~` quando ela fica dentro da pasta pessoal.
+pub fn line_for(pasta: &Path, home: Option<&Path>) -> String {
+    match home.and_then(|h| pasta.strip_prefix(h).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Some(rest) => format!("~/{}", rest.display().to_string().replace('\\', "/")),
+        None => pasta.display().to_string(),
+    }
+}
+
+/// Acrescenta `pasta` ao arquivo (a pasta escolhida no seletor). `false` se já estava.
+pub fn append(data_dir: &Path, pasta: &Path) -> std::io::Result<bool> {
+    let file = ensure_file(data_dir);
+    let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+    if parse(&text, home().as_deref()).iter().any(|r| r == pasta) {
+        return Ok(false);
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&line_for(pasta, home().as_deref()));
+    text.push('\n');
+    std::fs::write(&file, text)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +130,17 @@ mod tests {
         let got = parse(&text, Some(&home));
         assert_eq!(got, [home.join("Projetos"), home.clone(), PathBuf::from(&abs)]);
         assert!(parse("~/x", None).is_empty());
+    }
+
+    #[test]
+    fn pasta_escolhida_vira_linha_com_til() {
+        let home = std::env::temp_dir().join("casa");
+        assert_eq!(line_for(&home.join("Projetos").join("x"), Some(&home)), "~/Projetos/x");
+        assert_eq!(line_for(&home, Some(&home)), "~");
+        let fora = std::env::temp_dir().join("fora");
+        assert_eq!(line_for(&fora, Some(&home)), fora.display().to_string());
+        // e a linha lida de volta dá a mesma pasta
+        assert_eq!(parse(&line_for(&home.join("a"), Some(&home)), Some(&home)), [home.join("a")]);
     }
 
     #[test]

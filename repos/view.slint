@@ -1,5 +1,7 @@
 // Tela do app Repositórios. O host preenche theme, mascot e mood; o resto vem do
 // executável (src/main.rs), com {"type":"set","prop":"…","value":…}.
+// Todo texto escala com theme.text-scale (Configurações › Aparência), e as alturas crescem
+// com ele em vez de cortar.
 import { ListView } from "std-widgets.slint";
 import { Theme } from "miniutils.slint";
 
@@ -13,23 +15,76 @@ export struct Repo {
     behind: int,
     // "há 5 h" (pendência mais velha), "agora" ou ""
     age: string,
-    // conflict, stale, work, push, error, clean
+    // conflict, broken, stale, work, push, error, clean
     state: string,
-    // "rebase em andamento · 1 no stash", ou a mensagem de erro
+    // "rebase em andamento · 1 no stash · 2 PRs esperam sua revisão", ou a mensagem de erro
     note: string,
+    // "Claude trabalhando", "Codex espera você", "Claude terminou · sem commit", ou ""
+    agent: string,
+    // working, waiting, finished, ou ""
+    agent-state: string,
+    can-push: bool,
+    can-pull: bool,
+    // "enviando…", "puxando…", "apagando branches…", ou ""
+    busy: string,
+    // "CI ✓", "CI ✗", "CI …", ou ""
+    ci: string,
+    // ok, fail, running, ou ""
+    ci-state: string,
+    pinned: bool,
+    hidden: bool,
 }
 
 component Button inherits Rectangle {
     in property <Theme> theme;
     in property <string> label;
+    // destaque: a ação que a linha está pedindo (enviar, puxar)
+    in property <bool> strong;
     callback clicked;
     width: max(34px, txt.preferred-width + 14px);
-    height: 24px;
-    background: touch.has-hover ? theme.fur.with-alpha(0.2) : transparent;
+    height: max(24px, txt.preferred-height + 8px);
+    background: touch.has-hover ? theme.fur.with-alpha(0.2) : strong ? theme.fur.with-alpha(0.12) : transparent;
     border-width: 1px;
-    border-color: touch.has-hover ? theme.fur : theme.muted;
-    txt := Text { text: label; color: theme.text; font-size: 11px; }
-    touch := TouchArea { clicked => { root.clicked(); } }
+    border-color: touch.has-hover || strong ? theme.fur : theme.muted;
+    txt := Text { text: label; color: theme.text; font-size: 11px * theme.text-scale; }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// Etiqueta pequena colorida (agente, CI, "fixo").
+component Tag inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> label;
+    in property <color> tint;
+    width: txt.preferred-width + 10px;
+    height: txt.preferred-height + 2px;
+    background: tint.with-alpha(0.15);
+    border-width: 1px;
+    border-color: tint.with-alpha(0.6);
+    txt := Text { text: label; color: tint; font-size: 10px * theme.text-scale; vertical-alignment: center; }
+}
+
+// Área clicável que mede o que tem dentro (um Rectangle sozinho não passa a altura dos
+// filhos para o layout de fora).
+component Clickable inherits Rectangle {
+    in property <Theme> theme;
+    callback clicked;
+    min-height: inner.min-height;
+    preferred-height: inner.preferred-height;
+    background: touch.has-hover ? theme.fur.with-alpha(0.06) : transparent;
+    inner := VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        @children
+    }
+    touch := TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// Uma linha de texto do detalhe.
+component Line inherits Text {
+    in property <Theme> theme;
+    color: theme.sub;
+    font-size: 11px * theme.text-scale;
+    overflow: elide;
 }
 
 export component Main inherits Rectangle {
@@ -42,18 +97,43 @@ export component Main inherits Rectangle {
     in property <string> empty;
     // "+5 repositórios limpos" (com a opção de mostrar só pendências)
     in property <string> footer;
+    // repositórios ocultos, e se eles estão aparecendo
+    in property <int> hidden-count;
+    in property <bool> show-hidden;
     // nome do editor que abre a pasta ("VS Code"), ou "" se não houver
     in property <string> editor;
+    // caminho do repositório aberto (detalhe), ou ""
+    in property <string> open;
+    // o detalhe do repositório aberto
+    in property <[string]> detail-files;
+    in property <string> detail-more;
+    in property <[string]> detail-commits;
+    in property <[string]> detail-stash;
+    // "2 branches já mergeadas em main: a, b", ou ""
+    in property <string> detail-merged;
     callback action(string, string);
 
     property <bool> short: self.height < 220px;
     property <bool> narrow: self.width < 440px;
+    // apagar branches pede um segundo clique: o caminho do repositório em confirmação
+    property <string> confirm-prune;
 
     function color-of(state: string) -> color {
-        if state == "conflict" { return theme.alarm; }
+        if state == "conflict" || state == "broken" { return theme.alarm; }
         if state == "stale" { return theme.warn; }
         if state == "work" || state == "push" { return theme.fur; }
         if state == "error" { return theme.muted; }
+        return theme.ok;
+    }
+
+    function agent-color(state: string) -> color {
+        if state == "waiting" || state == "finished" { return theme.warn; }
+        return theme.fur;
+    }
+
+    function ci-color(state: string) -> color {
+        if state == "fail" { return theme.alarm; }
+        if state == "running" { return theme.warn; }
         return theme.ok;
     }
 
@@ -71,13 +151,14 @@ export component Main inherits Rectangle {
             VerticalLayout {
                 alignment: center;
                 horizontal-stretch: 1;
-                Text { text: "Repositórios"; color: theme.text; font-family: theme.font-title; font-size: short ? 15px : 17px; font-weight: 700; overflow: elide; }
-                Text { text: subtitle; color: theme.sub; font-size: 12px; overflow: elide; }
+                Text { text: "Repositórios"; color: theme.text; font-family: theme.font-title; font-size: (short ? 15px : 17px) * theme.text-scale; font-weight: 700; overflow: elide; }
+                Text { text: subtitle; color: theme.sub; font-size: 12px * theme.text-scale; overflow: elide; }
             }
             VerticalLayout {
                 alignment: center;
                 HorizontalLayout {
                     spacing: 6px;
+                    Button { theme: theme; label: "+ Pasta"; clicked => { root.action("add_root", ""); } }
                     if !narrow: Button { theme: theme; label: "Pastas"; clicked => { root.action("roots", ""); } }
                     Button { theme: theme; label: "Atualizar"; clicked => { root.action("refresh", ""); } }
                 }
@@ -87,7 +168,7 @@ export component Main inherits Rectangle {
         if empty != "": Text {
             text: empty;
             color: theme.sub;
-            font-size: 13px;
+            font-size: 13px * theme.text-scale;
             wrap: word-wrap;
             vertical-stretch: 1;
         }
@@ -95,34 +176,84 @@ export component Main inherits Rectangle {
         if empty == "": ListView {
             vertical-stretch: 1;
             for r in repos: Rectangle {
-                height: 46px;
-                HorizontalLayout {
+                // cresce com o tamanho do texto e com o detalhe aberto
+                height: max(46px, row.preferred-height + 8px);
+                opacity: r.hidden ? 0.55 : 1;
+                row := HorizontalLayout {
                     padding-right: 8px;
                     spacing: 8px;
                     // faixa com a cor da situação
                     Rectangle { width: 3px; background: color-of(r.state); }
                     VerticalLayout {
-                        alignment: center;
                         horizontal-stretch: 1;
-                        spacing: 2px;
-                        HorizontalLayout {
-                            spacing: 8px;
-                            Text { text: r.name; color: theme.text; font-size: 14px; font-weight: 700; overflow: elide; }
-                            Text { text: r.branch; color: theme.sub; font-family: theme.font-mono; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
-                            if r.ahead > 0: Text { text: "↑" + r.ahead; color: color-of(r.state); font-family: theme.font-mono; font-size: 12px; vertical-alignment: center; }
-                            if r.behind > 0: Text { text: "↓" + r.behind; color: theme.sub; font-family: theme.font-mono; font-size: 12px; vertical-alignment: center; }
+                        alignment: center;
+                        spacing: 6px;
+                        // clicar no nome abre e fecha o detalhe
+                        Clickable {
+                            theme: theme;
+                            clicked => { root.action("toggle", r.path); }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: (r.path == open ? "▾ " : "▸ ") + r.name; color: theme.text; font-size: 14px * theme.text-scale; font-weight: 700; overflow: elide; }
+                                Text { text: r.branch; color: theme.sub; font-family: theme.font-mono; font-size: 11px * theme.text-scale; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                                if r.pinned: Tag { theme: theme; label: "fixo"; tint: theme.sub; }
+                                if r.agent != "" && !narrow: Tag { theme: theme; label: r.agent; tint: agent-color(r.agent-state); }
+                                if r.ci != "": Tag { theme: theme; label: r.ci; tint: ci-color(r.ci-state); }
+                                if r.ahead > 0: Text { text: "↑" + r.ahead; color: color-of(r.state); font-family: theme.font-mono; font-size: 12px * theme.text-scale; vertical-alignment: center; }
+                                if r.behind > 0: Text { text: "↓" + r.behind; color: theme.sub; font-family: theme.font-mono; font-size: 12px * theme.text-scale; vertical-alignment: center; }
+                            }
+                            Text {
+                                text: r.busy != "" ? r.busy
+                                    : r.changes + (r.age != "" ? " · " + r.age : "") + (r.note != "" ? " · " + r.note : "");
+                                color: r.busy != "" ? theme.fur : r.state == "clean" ? theme.sub : color-of(r.state);
+                                font-size: 12px * theme.text-scale;
+                                overflow: elide;
+                            }
+                            // sem espaço para a etiqueta, o agente vai numa linha só dele
+                            if r.agent != "" && narrow: Text { text: r.agent; color: agent-color(r.agent-state); font-size: 11px * theme.text-scale; overflow: elide; }
                         }
-                        Text {
-                            text: r.changes + (r.age != "" ? " · " + r.age : "") + (r.note != "" ? " · " + r.note : "");
-                            color: r.state == "clean" ? theme.sub : color-of(r.state);
-                            font-size: 12px;
-                            overflow: elide;
+
+                        // o detalhe: arquivos, commits, stash, branches e as ações da linha
+                        if r.path == open: VerticalLayout {
+                            padding-left: 14px;
+                            padding-bottom: 6px;
+                            spacing: 2px;
+                            for f in detail-files: Line { theme: theme; text: f; font-family: theme.font-mono; color: theme.text; }
+                            if detail-more != "": Line { theme: theme; text: detail-more; }
+                            if detail-commits.length > 0: Line { theme: theme; text: "Últimos commits"; color: theme.text; font-weight: 700; }
+                            for c in detail-commits: Line { theme: theme; text: c; font-family: theme.font-mono; }
+                            if detail-stash.length > 0: Line { theme: theme; text: "Stash"; color: theme.text; font-weight: 700; }
+                            for s in detail-stash: Line { theme: theme; text: s; font-family: theme.font-mono; }
+                            if detail-merged != "": Line { theme: theme; text: detail-merged; wrap: word-wrap; overflow: clip; }
+                            HorizontalLayout {
+                                padding-top: 4px;
+                                spacing: 6px;
+                                alignment: start;
+                                Button { theme: theme; label: r.pinned ? "Desafixar" : "Fixar no topo"; clicked => { root.action("pin", r.path); } }
+                                Button { theme: theme; label: r.hidden ? "Mostrar" : "Ocultar"; clicked => { root.action("hide", r.path); } }
+                                if detail-merged != "": Button {
+                                    theme: theme;
+                                    strong: confirm-prune == r.path;
+                                    label: confirm-prune == r.path ? "Confirmar: apagar" : "Apagar branches mergeadas";
+                                    clicked => {
+                                        if confirm-prune == r.path {
+                                            confirm-prune = "";
+                                            root.action("prune", r.path);
+                                        } else {
+                                            confirm-prune = r.path;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     VerticalLayout {
-                        alignment: center;
+                        alignment: start;
+                        padding-top: 6px;
                         HorizontalLayout {
                             spacing: 4px;
+                            if r.can-push: Button { theme: theme; strong: true; label: "↑ Enviar"; clicked => { root.action("push", r.path); } }
+                            if r.can-pull: Button { theme: theme; strong: true; label: "↓ Puxar"; clicked => { root.action("pull", r.path); } }
                             Button { theme: theme; label: ">_"; clicked => { root.action("terminal", r.path); } }
                             if !narrow: Button { theme: theme; label: "Pasta"; clicked => { root.action("folder", r.path); } }
                             if !narrow && editor != "": Button { theme: theme; label: editor; clicked => { root.action("editor", r.path); } }
@@ -132,6 +263,17 @@ export component Main inherits Rectangle {
             }
         }
 
-        if footer != "": Text { text: footer; color: theme.muted; font-size: 11px; }
+        if footer != "" || hidden-count > 0: HorizontalLayout {
+            spacing: 8px;
+            if footer != "": Text { text: footer; color: theme.muted; font-size: 11px * theme.text-scale; vertical-alignment: center; }
+            if hidden-count > 0: Text {
+                text: (hidden-count == 1 ? "1 oculto" : hidden-count + " ocultos") + (show-hidden ? " · esconder" : " · mostrar");
+                color: theme.sub;
+                font-size: 11px * theme.text-scale;
+                vertical-alignment: center;
+                TouchArea { mouse-cursor: pointer; clicked => { root.action("show_hidden", ""); } }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
     }
 }

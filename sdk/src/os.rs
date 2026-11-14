@@ -1,5 +1,6 @@
 //! Miudezas por sistema que um app externo costuma precisar: rodar um programa sem janela
-//! de console, abrir pasta ou arquivo no programa padrão e abrir um terminal numa pasta.
+//! de console, abrir pasta ou arquivo no programa padrão, abrir um terminal numa pasta e
+//! pedir uma pasta ao usuário.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -53,6 +54,52 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
     } else {
         spawn_detached(command("xdg-open").arg(path))
     }
+}
+
+/// Abre o seletor de pasta do sistema e espera a escolha: `Ok(None)` se a pessoa cancelou.
+/// Bloqueia até fechar, então chame numa thread. No Linux usa o `zenity`, o `kdialog` ou o
+/// `yad` (o primeiro que houver); no Windows, o diálogo do .NET pelo PowerShell.
+pub fn pick_folder(title: &str) -> std::io::Result<Option<PathBuf>> {
+    let mut cmd = folder_dialog(title)?;
+    let out = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output()?;
+    // fechar ou cancelar sai com código 1 nos três do Linux; o do Windows não imprime nada
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    Ok((out.status.success() && !path.is_empty()).then(|| PathBuf::from(path)))
+}
+
+#[cfg(not(windows))]
+fn folder_dialog(title: &str) -> std::io::Result<Command> {
+    let start = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
+    if which("zenity").is_some() {
+        let mut c = command("zenity");
+        c.args(["--file-selection", "--directory"]).arg(format!("--title={title}"));
+        return Ok(c);
+    }
+    if which("kdialog").is_some() {
+        let mut c = command("kdialog");
+        c.arg("--getexistingdirectory").arg(&start).arg("--title").arg(title);
+        return Ok(c);
+    }
+    if which("yad").is_some() {
+        let mut c = command("yad");
+        c.args(["--file", "--directory"]).arg(format!("--title={title}"));
+        return Ok(c);
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::NotFound, "nenhum seletor de pasta (instale o zenity ou o kdialog)"))
+}
+
+#[cfg(windows)]
+fn folder_dialog(title: &str) -> std::io::Result<Command> {
+    // o título vai por variável de ambiente: nada de montar o script com texto de fora
+    let script = "Add-Type -AssemblyName System.Windows.Forms; \
+        $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }; \
+        $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
+        $d.Description = $env:MINIUTILS_PICK_TITLE; $d.ShowNewFolderButton = $false; \
+        if ($d.ShowDialog($owner) -eq 'OK') { \
+            [Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write($d.SelectedPath) }";
+    let mut c = command("powershell.exe");
+    c.args(["-NoProfile", "-NonInteractive", "-STA", "-Command", script]).env("MINIUTILS_PICK_TITLE", title);
+    Ok(c)
 }
 
 /// Terminais conhecidos do Linux, na ordem de preferência (depois do `$TERMINAL`).

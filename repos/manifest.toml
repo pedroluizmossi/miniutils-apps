@@ -3,9 +3,12 @@
 # repositório do MiniUtils).
 id = "io.github.pedroluizmossi.repos"
 name = "Repositórios"
-description = "Seus repositórios Git e o que falta commitar e enviar. A mascote cobra pendência velha e comemora quando tudo foi enviado. Funciona no Linux e no Windows (precisa do git)."
+description = "Seus repositórios Git e o que falta commitar e enviar, com enviar e puxar num clique, o agente de IA trabalhando em cada um e o CI do GitHub. A mascote cobra pendência velha e comemora quando tudo foi enviado. Funciona no Linux e no Windows (precisa do git; o CI, do gh)."
 icon = "polvo"
 api = 1
+# as sessões do Claude Code, do Codex e do OpenCode (a pasta de cada uma), para mostrar
+# o agente trabalhando no repositório
+uses = ["agents"]
 
 [app]
 view = "view.slint"
@@ -42,3 +45,24 @@ key = "fetch"
 label = "Buscar no remoto a cada 30 min (git fetch)"
 type = "bool"
 default = false
+
+[[settings]]
+key = "github"
+label = "Mostrar CI e PRs do GitHub (precisa do gh com login)"
+type = "bool"
+default = true
+
+[[settings]]
+key = "reminder"
+label = "Lembrar no fim do dia dos commits sem enviar"
+type = "bool"
+default = true
+
+[[settings]]
+key = "reminder_hour"
+label = "Hora do lembrete"
+type = "int"
+default = 18
+min = 12
+max = 23
+step = 1

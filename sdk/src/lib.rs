@@ -43,8 +43,18 @@ pub struct Start {
     pub os: String,
     /// Pasta para os dados do app: sobrevive a atualizações e sai ao remover o app.
     pub data_dir: PathBuf,
+    /// Versão dos dados que estão em `data_dir`. Se for menor que a do app (o `version` do
+    /// `[data]` no manifesto), migre os dados e chame [`migrated`] com a versão do app: o
+    /// hub guarda uma cópia antes e a devolve se o app sair sem o `migrated`. Um hub sem
+    /// esse campo (anterior à versão de dados) conta como 1.
+    #[serde(default = "first_data_version")]
+    pub data_version: u32,
     /// As opções do app (as `[[settings]]` do manifesto), por chave.
     pub settings: Value,
+}
+
+fn first_data_version() -> u32 {
+    1
 }
 
 /// Do hub para o app.
@@ -180,6 +190,12 @@ pub fn clear_error() {
     error("");
 }
 
+/// Terminou de migrar os dados para `version` (a do `[data]` do manifesto). Só depois
+/// disto o hub descarta a cópia de antes da migração (ver [`Start::data_version`]).
+pub fn migrated(version: u32) {
+    send(json!({ "type": "migrated", "version": version }));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,7 +206,13 @@ mod tests {
             r#"{"type":"start","api":1,"id":"a.b","os":"linux","data_dir":"/tmp/x","settings":{"n":2}}"#,
         )
         .unwrap();
-        assert!(matches!(s, HostMsg::Start(Start { ref os, ref settings, .. }) if os == "linux" && settings["n"] == 2));
+        // sem data_version (hub antigo): conta como 1
+        assert!(matches!(s, HostMsg::Start(Start { ref os, ref settings, data_version: 1, .. }) if os == "linux" && settings["n"] == 2));
+        let s: HostMsg = serde_json::from_str(
+            r#"{"type":"start","api":1,"id":"a.b","os":"windows","data_dir":"C:\\x","data_version":3,"settings":{}}"#,
+        )
+        .unwrap();
+        assert!(matches!(s, HostMsg::Start(Start { data_version: 3, .. })));
         assert!(matches!(serde_json::from_str(r#"{"type":"tick"}"#).unwrap(), HostMsg::Tick));
         let a: HostMsg = serde_json::from_str(r#"{"type":"action","name":"abrir","arg":"/x"}"#).unwrap();
         assert!(matches!(a, HostMsg::Action { ref name, ref arg } if name == "abrir" && arg == "/x"));

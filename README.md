@@ -6,8 +6,13 @@ A tela é um `view.slint`, que o hub interpreta e encaixa na célula do painel.
 
 | Pasta | O que é |
 |---|---|
-| `sdk/` | crate `miniutils-app`: o lado do app no protocolo (`listen`, `set`, `mood`, `fact`…) e miudezas por sistema (`os::open_terminal`, `os::open_path`, `os::command` sem janela no Windows) |
-| `repos/` | **Repositórios**: os seus repositórios Git e o que falta commitar e enviar |
+| `sdk/` | crate `miniutils-app`: o lado do app no protocolo (`listen`, `set`, `mood`, `fact`, `migrated`…) e miudezas por sistema (`os::open_terminal`, `os::open_path`, `os::pick_folder`, `os::command` sem janela no Windows) |
+| `repos/` | **Repositórios**: os seus repositórios Git e o que falta commitar e enviar, com enviar e puxar num clique, o agente de IA em cada um e o CI do GitHub |
+
+Dados com formato versionado: o `start` traz `data_version` (a versão dos dados na pasta).
+Se for menor que o `version` do `[data]` do seu manifesto, migre e chame
+`miniutils_app::migrated(versão)`; o hub guarda uma cópia antes e a devolve se o app sair
+sem isso.
 
 Precisa de um MiniUtils com suporte a apps externos (`[app]` no manifesto). O protocolo
 está no topo de `src/apps/external.rs` do hub, e o formato do manifesto no topo de
