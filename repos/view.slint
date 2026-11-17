@@ -2,7 +2,6 @@
 // the executable (src/main.rs), with {"type":"set","prop":"…","value":…}.
 // All text scales with theme.text-scale (Settings › Appearance), and heights grow with it
 // instead of clipping. Visible text is English in @tr(…); the hub translates it with i18n/<lang>.po.
-import { ListView } from "std-widgets.slint";
 import { Theme } from "miniutils.slint";
 
 export struct Repo {
@@ -85,6 +84,34 @@ component Line inherits Text {
     color: theme.sub;
     font-size: 11px * theme.text-scale;
     overflow: elide;
+}
+
+// A scrolling column, in place of std-widgets' ListView: importing std-widgets makes the
+// hub compile the whole widget library for this view (~15 MB of memory per app). The
+// rows are all created (no virtualization), which is fine for the few hundred rows the
+// app sends. The thin bar shows where the view is; the wheel and dragging scroll.
+component Scroller inherits Rectangle {
+    in property <Theme> theme;
+    clip: true;
+    list := Flickable {
+        width: parent.width - 6px;
+        height: parent.height;
+        viewport-width: self.width;
+        viewport-height: max(self.height, column.preferred-height);
+        column := VerticalLayout {
+            width: parent.width;
+            alignment: start;
+            @children
+        }
+    }
+    if list.viewport-height > list.height + 1px: Rectangle {
+        x: parent.width - 4px;
+        width: 3px;
+        height: max(16px, parent.height * (list.height / list.viewport-height));
+        y: (parent.height - self.height) * (-list.viewport-y / max(1px, list.viewport-height - list.height));
+        border-radius: 1.5px;
+        background: theme.muted.with-alpha(0.8);
+    }
 }
 
 export component Main inherits Rectangle {
@@ -173,7 +200,8 @@ export component Main inherits Rectangle {
             vertical-stretch: 1;
         }
 
-        if empty == "": ListView {
+        if empty == "": Scroller {
+            theme: theme;
             vertical-stretch: 1;
             for r in repos: Rectangle {
                 // grows with the text size and with the detail open

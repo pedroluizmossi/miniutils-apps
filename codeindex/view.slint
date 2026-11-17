@@ -3,11 +3,11 @@
 // Text scales with theme.text-scale and rows grow with it. Visible text is English in
 // @tr(…); the hub translates it with i18n/<lang>.po.
 //
+// No std-widgets: its import costs ~15 MB of hub memory per app; lists use `Scroller`.
 // Sizes: a small cell (under ~360×260) shows the status, the counters and a running sync.
 // Bigger, four tabs: Search, Repositories, Sync and Health. The tab bodies are stacked and
 // only hidden (not rebuilt) when switching, so a typed query or a scroll position survives;
 // the text fields also take back the app's value when they are not being edited.
-import { ListView } from "std-widgets.slint";
 import { Theme } from "miniutils.slint";
 
 export struct HitRow {
@@ -78,6 +78,34 @@ export struct Bar {
     err: float,
     label: string,
     tip: string,
+}
+
+// A scrolling column, in place of std-widgets' ListView: importing std-widgets makes the
+// hub compile the whole widget library for this view (~15 MB of memory per app). The
+// rows are all created (no virtualization), which is fine for the few hundred rows the
+// app sends. The thin bar shows where the view is; the wheel and dragging scroll.
+component Scroller inherits Rectangle {
+    in property <Theme> theme;
+    clip: true;
+    list := Flickable {
+        width: parent.width - 6px;
+        height: parent.height;
+        viewport-width: self.width;
+        viewport-height: max(self.height, column.preferred-height);
+        column := VerticalLayout {
+            width: parent.width;
+            alignment: start;
+            @children
+        }
+    }
+    if list.viewport-height > list.height + 1px: Rectangle {
+        x: parent.width - 4px;
+        width: 3px;
+        height: max(16px, parent.height * (list.height / list.viewport-height));
+        y: (parent.height - self.height) * (-list.viewport-y / max(1px, list.viewport-height - list.height));
+        border-radius: 1.5px;
+        background: theme.muted.with-alpha(0.8);
+    }
 }
 
 // Labels and colors of the statuses the server reports.
@@ -267,7 +295,8 @@ component ResultList inherits Rectangle {
     callback select(int);
     border-width: 1px;
     border-color: theme.muted.with-alpha(0.5);
-    ListView {
+    Scroller {
+        theme: theme;
         for r in results: Clickable {
             theme: theme;
             active: r.idx == selected;
@@ -735,7 +764,8 @@ export component Main inherits Rectangle {
                         vertical-stretch: 1;
                         border-width: 1px;
                         border-color: theme.muted.with-alpha(0.5);
-                        ListView {
+                        Scroller {
+                            theme: theme;
                             for r in repo-rows: RepoItem {
                                 theme: theme;
                                 r: r;
@@ -776,13 +806,10 @@ export component Main inherits Rectangle {
                     if sync-state == "confirm": Text { text: sync-preview; color: theme.text; font-size: 11px * theme.text-scale; wrap: word-wrap; }
                     if sync-note != "": Note { theme: theme; text: sync-note; }
                     if org-note != "": Note { theme: theme; text: org-note; }
-                    Flickable {
+                    Scroller {
+                        theme: theme;
                         vertical-stretch: 1;
-                        viewport-width: self.width;
-                        viewport-height: max(self.height, sync-list.preferred-height);
-                        sync-list := VerticalLayout {
-                            width: parent.width;
-                            alignment: start;
+                        VerticalLayout {
                             spacing: 4px;
                             if job-active && live-repos.length > 0: Section { theme: theme; text: @tr("This batch"); }
                             for lr in live-repos: VerticalLayout {
@@ -812,12 +839,9 @@ export component Main inherits Rectangle {
             // -------------------------------------------- Health
             Rectangle {
                 visible: online && tab == "health";
-                Flickable {
-                    viewport-width: self.width;
-                    viewport-height: max(self.height, health-list.preferred-height);
-                    health-list := VerticalLayout {
-                        width: parent.width;
-                        alignment: start;
+                Scroller {
+                    theme: theme;
+                    VerticalLayout {
                         spacing: 6px;
                         Section { theme: theme; text: @tr("Enrichment"); }
                         if !can-enrich: Note { theme: theme; text: @tr("The enrichment status needs a token with enrich:write."); }
